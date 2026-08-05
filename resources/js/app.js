@@ -1,12 +1,43 @@
 import './bootstrap';
 import { Passkeys } from '@laravel/passkeys';
 
+document.querySelectorAll('.module-permissions label').forEach(label => {
+    if (label.textContent.includes('Agenda por servicio')) label.lastChild.textContent = ' Atención profesional';
+});
+
+const pageLoader = document.createElement('div');
+pageLoader.id = 'pageLoader';
+pageLoader.className = 'page-loader visible';
+pageLoader.setAttribute('role', 'status');
+pageLoader.setAttribute('aria-live', 'polite');
+pageLoader.innerHTML = `<div class="loader-card"><div class="loader-logo"><img src="/logo-hospital-la-merced.png" alt=""></div><strong>Hospital La Merced Paita</strong><span>Cargando sistema...</span><i></i></div>`;
+document.body.appendChild(pageLoader);
+const hideLoader = () => requestAnimationFrame(() => requestAnimationFrame(() => pageLoader.classList.remove('visible')));
+const showLoader = (message = 'Cargando sistema...') => {
+    pageLoader.querySelector('span').textContent = message;
+    pageLoader.classList.add('visible');
+};
+window.addEventListener('load', hideLoader);
+window.addEventListener('pageshow', hideLoader);
+setTimeout(hideLoader, 900);
+document.addEventListener('click', event => {
+    const link = event.target.closest('a[href]');
+    if (!link || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || link.target === '_blank' || link.hasAttribute('download')) return;
+    const target = new URL(link.href, window.location.href);
+    if (target.origin === window.location.origin && target.href !== window.location.href && !target.hash) showLoader('Cambiando de módulo...');
+});
+document.addEventListener('submit', event => {
+    if (event.defaultPrevented || !event.target.checkValidity()) return;
+    showLoader(event.target.closest('.login-card') ? 'Iniciando sesión segura...' : 'Guardando cambios...');
+});
+
 const savedTheme = localStorage.getItem('hospital-theme');
 const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 const applyTheme = theme => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     localStorage.setItem('hospital-theme', theme);
+    document.cookie = `hospital_theme=${theme};path=/;max-age=31536000;samesite=lax`;
     const button = document.getElementById('themeToggle');
     if (button) {
         button.innerHTML = theme === 'dark' ? '<span>☀</span><b>Modo claro</b>' : '<span>☾</span><b>Modo oscuro</b>';
@@ -28,6 +59,33 @@ document.getElementById('togglePassword')?.addEventListener('click', event => {
     input.type = visible ? 'password' : 'text';
     event.currentTarget.textContent = visible ? 'Mostrar' : 'Ocultar';
 });
+
+const photoInput = document.querySelector('input[name="photo"]');
+if (photoInput) {
+    photoInput.accept = 'image/jpeg,image/png,image/webp';
+    const currentPhoto = document.querySelector('.profile-photo img');
+    const uploader = document.createElement('div');
+    uploader.className = 'photo-uploader';
+    uploader.innerHTML = `<div class="photo-preview">${currentPhoto ? `<img src="${currentPhoto.src}" alt="Vista previa">` : '<span>＋</span>'}</div><div><strong>${currentPhoto ? 'Cambiar fotografía' : 'Subir fotografía'}</strong><small>Haz clic o arrastra una imagen JPG, PNG o WebP · Máximo 10 MB</small><em id="photoFileName">Ningún archivo seleccionado</em></div>`;
+    photoInput.parentNode.insertBefore(uploader, photoInput);
+    uploader.appendChild(photoInput);
+    const preview = uploader.querySelector('.photo-preview');
+    const fileName = uploader.querySelector('#photoFileName');
+    const showPhoto = file => {
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { fileName.textContent = 'Selecciona un archivo de imagen válido.'; uploader.classList.add('invalid'); return; }
+        if (file.size > 10 * 1024 * 1024) { fileName.textContent = 'La imagen supera el máximo de 10 MB.'; uploader.classList.add('invalid'); return; }
+        uploader.classList.remove('invalid');
+        preview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Vista previa de la nueva fotografía">`;
+        fileName.textContent = file.name;
+        const headerPreview = document.querySelector('.profile-photo');
+        if (headerPreview) headerPreview.innerHTML = `<img src="${preview.querySelector('img').src}" alt="Nueva fotografía">`;
+    };
+    photoInput.addEventListener('change', () => showPhoto(photoInput.files[0]));
+    ['dragenter','dragover'].forEach(type => uploader.addEventListener(type, event => { event.preventDefault(); uploader.classList.add('dragging'); }));
+    ['dragleave','drop'].forEach(type => uploader.addEventListener(type, event => { event.preventDefault(); uploader.classList.remove('dragging'); }));
+    uploader.addEventListener('drop', event => { if (event.dataTransfer.files[0]) { photoInput.files = event.dataTransfer.files; showPhoto(photoInput.files[0]); } });
+}
 
 const rows = window.appointments || [];
 const body = document.getElementById('appointmentsBody');
@@ -151,8 +209,44 @@ document.getElementById('scanDni')?.addEventListener('click',async()=>{
     } catch {close();showModuleToast('No se pudo abrir la cámara','Revisa el permiso de cámara o escribe el DNI manualmente.');}
 });
 
-document.getElementById('roleMenu')?.addEventListener('click',()=>document.querySelector('.role-sidebar')?.classList.toggle('open'));
+document.getElementById('roleMenu')?.addEventListener('click', () => {
+    const sidebar = document.querySelector('.role-sidebar');
+    sidebar?.classList.toggle('open');
+    document.body.classList.toggle('menu-open', sidebar?.classList.contains('open'));
+});
+document.addEventListener('click', event => {
+    const sidebar = document.querySelector('.role-sidebar');
+    if (window.innerWidth <= 760 && sidebar?.classList.contains('open') && !event.target.closest('.role-sidebar') && !event.target.closest('#roleMenu')) {
+        sidebar.classList.remove('open');
+        document.body.classList.remove('menu-open');
+    }
+});
 const userMenuButton = document.getElementById('userMenuButton');
+const roleSidebar = document.querySelector('.role-sidebar');
+if (roleSidebar) {
+    const collapseButton = document.createElement('button');
+    collapseButton.type = 'button';
+    collapseButton.className = 'sidebar-collapse';
+    collapseButton.innerHTML = '<span>‹</span>';
+    roleSidebar.appendChild(collapseButton);
+    const setCollapsed = collapsed => {
+        document.body.classList.toggle('sidebar-collapsed', collapsed);
+        collapseButton.innerHTML = `<span>${collapsed ? '›' : '‹'}</span>`;
+        collapseButton.setAttribute('aria-label', collapsed ? 'Mostrar menú lateral' : 'Ocultar menú lateral');
+    };
+    if (window.innerWidth > 760) setCollapsed(localStorage.getItem('hospital-sidebar') === 'collapsed');
+    collapseButton.addEventListener('click', () => {
+        if (window.innerWidth <= 760) {
+            roleSidebar.classList.remove('open');
+            document.body.classList.remove('menu-open');
+            return;
+        }
+        const collapsed = !document.body.classList.contains('sidebar-collapsed');
+        setCollapsed(collapsed);
+        localStorage.setItem('hospital-sidebar', collapsed ? 'collapsed' : 'expanded');
+    });
+    window.addEventListener('resize', () => window.innerWidth <= 760 ? document.body.classList.remove('sidebar-collapsed') : setCollapsed(localStorage.getItem('hospital-sidebar') === 'collapsed'));
+}
 const userDropdown = document.getElementById('userDropdown');
 userMenuButton?.addEventListener('click', event => {
     event.stopPropagation();

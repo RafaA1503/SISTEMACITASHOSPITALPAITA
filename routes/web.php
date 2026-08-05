@@ -3,6 +3,8 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DniLookupController;
 use App\Http\Controllers\HospitalPortalController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\AdminCatalogController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -10,7 +12,8 @@ Route::get('/', function () {
         return redirect()->route('login');
     }
 
-    return redirect()->route('portal', ['role' => auth()->user()->role]);
+    $module = match(auth()->user()->role){'portero'=>'portero','admision'=>'citas','administrador'=>'administrador',default=>'servicio'};
+    return redirect()->route('portal', ['role' => $module]);
 })->name('inicio');
 
 Route::middleware('guest')->group(function () {
@@ -45,4 +48,13 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('dni')
         ->name('patients.appointments');
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
+    Route::post('/citas/registrar', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
+    Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
+    Route::put('/citas/{appointment}/atender', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
+    Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
+    Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
+    Route::put('/administracion/roles/usuarios/{user}', [RoleController::class, 'assign'])->name('admin.roles.assign');
+    Route::get('/administracion/servicios', [AdminCatalogController::class, 'index'])->name('admin.catalog');
+    Route::post('/administracion/servicios', [AdminCatalogController::class, 'storeService'])->name('admin.services.store');
+    Route::post('/administracion/profesionales', [AdminCatalogController::class, 'storeProfessional'])->name('admin.professionals.store');
 });

@@ -25,6 +25,7 @@ class User extends Authenticatable implements PasskeyUser
         'email',
         'password',
         'role',
+        'custom_role_id',
         'service_id',
         'document_number',
         'active',
@@ -57,4 +58,15 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
     public function service(): BelongsTo { return $this->belongsTo(Service::class); }
+    public function customRole(): BelongsTo { return $this->belongsTo(CustomRole::class); }
+    public function canAccessModule(string $module): bool
+    {
+        if ($this->role === 'administrador') return true;
+        if ($this->customRole?->active) return in_array($module, $this->customRole->modules ?? [], true);
+        return match ($this->role) {
+            'portero' => $module === 'portero',
+            'admision' => $module === 'citas',
+            default => $module === 'servicio',
+        };
+    }
 }

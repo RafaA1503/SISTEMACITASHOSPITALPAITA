@@ -28,7 +28,8 @@ class AuthController extends Controller
         }
         $request->session()->regenerate();
 
-        return redirect()->route('portal', $request->user()->role);
+        $module=match($request->user()->role){'portero'=>'portero','admision'=>'citas','administrador'=>'administrador',default=>'servicio'};
+        return redirect()->route('portal', $module);
     }
 
     public function logout(Request $request) { Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken(); return redirect()->route('login'); }

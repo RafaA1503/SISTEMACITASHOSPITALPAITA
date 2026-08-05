@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Ngrok y otros proxies terminan HTTPS antes de reenviar la petición.
         // Confiar en sus cabeceras evita generar recursos HTTP bloqueados en móviles.
         $middleware->trustProxies(at: '*');
+        $middleware->appendToGroup('web', \App\Http\Middleware\ApplySavedTheme::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
