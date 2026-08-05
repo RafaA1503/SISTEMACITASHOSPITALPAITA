@@ -121,3 +121,13 @@ document.getElementById('scanDni')?.addEventListener('click',async()=>{
         const detect=async()=>{if(!active)return;try{for(const code of await detector.detect(video)){const match=code.rawValue.match(/\b\d{8}\b/);if(match){accessDni.value=match[0];close();await lookupDni();return;}}}catch{}requestAnimationFrame(detect);};detect();
     } catch {close();showModuleToast('No se pudo abrir la cámara','Revisa el permiso de cámara o escribe el DNI manualmente.');}
 });
+
+document.getElementById('roleMenu')?.addEventListener('click',()=>document.querySelector('.role-sidebar')?.classList.toggle('open'));
+document.getElementById('portalSearch')?.addEventListener('click',async()=>{
+    const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
+    if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
+    button.disabled=true;button.textContent='Buscando...';
+    try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
+        result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('')}</div><div><strong>${data.patient.name}</strong><p>DNI ${data.patient.dni} · Seguro ${data.patient.insurance||'No registrado'}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${data.appointments.map(a=>`<article><div class="appointment-date"><strong>${a.time}</strong><small>${a.date}</small></div><div><span>${a.service}</span><h3>${a.type}</h3><p>${a.location||'Ubicación por confirmar'}</p>${a.preparation?`<small class="prep">Preparación: ${a.preparation}</small>`:''}</div><b>${a.status}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>'}</div>`;
+    }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
+});

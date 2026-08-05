@@ -22,6 +22,7 @@
             <a class="nav-item" href="{{ route('citas') }}"><span class="nav-icon">▣</span>Citas del día <b>18</b></a>
             <a class="nav-item" href="{{ route('pacientes') }}"><span class="nav-icon">⌕</span>Buscar paciente</a>
             <a class="nav-item" href="{{ route('accesos') }}"><span class="nav-icon">⇄</span>Registrar acceso</a>
+            <a class="nav-item" href="{{ route('portal','portero') }}"><span class="nav-icon">▦</span>Portal por roles</a>
             <a class="nav-item" href="{{ route('historial') }}"><span class="nav-icon">◷</span>Historial</a>
         </nav>
         <div class="side-divider"></div>
