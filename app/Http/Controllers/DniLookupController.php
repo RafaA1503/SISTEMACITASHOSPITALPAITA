@@ -16,10 +16,13 @@ class DniLookupController extends Controller {
     return response()->json(['message'=>$response->status()===404?'No se encontró una persona con ese DNI.':($providerMessage?:'RENIEC no pudo completar la consulta.')],$response->status()===404?404:502);
    }
    $payload=$response->json(); $data=data_get($payload,'data',data_get($payload,'result',$payload));
+   $names=$this->first($data,['nombres','nombre','names','first_name']);
+   $paternal=$this->first($data,['apellido_paterno','apellidoPaterno','ap_paterno','first_last_name']);
+   $maternal=$this->first($data,['apellido_materno','apellidoMaterno','ap_materno','second_last_name']);
    $full=$this->first($data,['nombre_completo','nombreCompleto','full_name','razon_social']);
-   if(!$full) $full=trim(implode(' ',array_filter([$this->first($data,['nombres','nombre','names','first_name']),$this->first($data,['apellidos']),$this->first($data,['apellido_paterno','apellidoPaterno','ap_paterno','first_last_name']),$this->first($data,['apellido_materno','apellidoMaterno','ap_materno','second_last_name'])])));
+   if(!$full) $full=trim(implode(' ',array_filter([$names,$this->first($data,['apellidos']),$paternal,$maternal])));
    if(!$full) return response()->json(['message'=>'RENIEC respondió, pero no devolvió el nombre completo.'],502);
-   return response()->json(['dni'=>$validated['dni'],'nombre_completo'=>mb_convert_case($full,MB_CASE_TITLE,'UTF-8')]);
+   return response()->json(['dni'=>$validated['dni'],'nombre_completo'=>mb_convert_case($full,MB_CASE_TITLE,'UTF-8'),'nombres'=>$names?mb_convert_case($names,MB_CASE_TITLE,'UTF-8'):null,'apellido_paterno'=>$paternal?mb_convert_case($paternal,MB_CASE_TITLE,'UTF-8'):null,'apellido_materno'=>$maternal?mb_convert_case($maternal,MB_CASE_TITLE,'UTF-8'):null]);
   } catch(Throwable $e){ report($e); return response()->json(['message'=>'No fue posible conectar con RENIEC. Intenta nuevamente.'],502); }
  }
  private function first(array $data,array $keys):?string { foreach($keys as $key){$value=data_get($data,$key);if(is_string($value)&&trim($value)!=='')return trim($value);}return null; }

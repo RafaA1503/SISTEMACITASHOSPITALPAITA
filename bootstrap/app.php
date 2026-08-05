@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         // El tema lo escribe JavaScript y debe poder leerse antes de renderizar el HTML.
         $middleware->encryptCookies(except: ['hospital_theme']);
+        $middleware->prependToGroup('web', \App\Http\Middleware\ConfigurePasskeyOrigin::class);
         $middleware->appendToGroup('web', \App\Http\Middleware\ApplySavedTheme::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {

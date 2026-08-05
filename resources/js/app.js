@@ -198,6 +198,85 @@ accessForm?.addEventListener('submit', e => {
     showModuleToast(`${type} registrado`, `El movimiento de Ana Ruiz Mendoza se guardó a las ${now}.`);
     accessForm.reset(); document.getElementById('identifiedPerson').hidden = true; registerAccess.disabled = true;
 });
+
+const appointmentDni = document.querySelector('.appointment-form input[name="dni"]');
+const appointmentName = document.querySelector('.appointment-form input[name="patient_name"]');
+if (appointmentDni && appointmentName) {
+    let manualDniEntry = false;
+    const lookupStatus = document.createElement('small');
+    lookupStatus.className = 'appointment-dni-status';
+    const lookupControls = document.createElement('div');
+    lookupControls.className = 'appointment-dni-controls';
+    const manualButton = document.createElement('button');
+    manualButton.type = 'button';
+    manualButton.className = 'dni-manual-toggle';
+    manualButton.textContent = '✎ Ingreso manual';
+    lookupControls.append(lookupStatus, manualButton);
+    appointmentDni.insertAdjacentElement('afterend', lookupControls);
+    const appointmentForm = appointmentDni.closest('form');
+    ['first_names','paternal_surname','maternal_surname'].forEach(name => {
+        const hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.name = name; appointmentForm.appendChild(hidden);
+    });
+    const patientDetails = document.createElement('details');
+    patientDetails.className = 'patient-extra-fields form-wide';
+    patientDetails.innerHTML = `<summary>＋ Datos adicionales del paciente</summary><div class="appointment-form"><label>Fecha de nacimiento<input type="date" name="birth_date"></label><label>Sexo<select name="sex"><option value="">No especificado</option><option value="F">Femenino</option><option value="M">Masculino</option><option value="O">Otro</option></select></label><label>Teléfono<input name="phone" maxlength="20"></label><label>Correo<input type="email" name="email"></label><label>Historia clínica<input name="medical_record_number" maxlength="30"></label><label>Seguro<input name="insurance" maxlength="100"></label><label class="form-wide">Dirección<input name="address" maxlength="180"></label></div>`;
+    appointmentForm.querySelector('button.primary-btn')?.insertAdjacentElement('beforebegin', patientDetails);
+    let lookupTimer;
+    let lastDni = '';
+    const lookupAppointmentDni = async () => {
+        if (manualDniEntry) return;
+        const dni = appointmentDni.value.replace(/\D/g, '').slice(0, 8);
+        appointmentDni.value = dni;
+        if (dni.length !== 8 || dni === lastDni) return;
+        lastDni = dni;
+        appointmentDni.classList.add('is-loading');
+        appointmentName.readOnly = true;
+        lookupStatus.className = 'appointment-dni-status loading';
+        lookupStatus.textContent = 'Consumiendo API RENIEC...';
+        try {
+            const response = await fetch(`/api/consultar-dni/${dni}`, {headers:{Accept:'application/json'}});
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'No fue posible consultar el DNI.');
+            appointmentName.value = data.nombre_completo;
+            appointmentForm.elements.first_names.value = data.nombres || '';
+            appointmentForm.elements.paternal_surname.value = data.apellido_paterno || '';
+            appointmentForm.elements.maternal_surname.value = data.apellido_materno || '';
+            lookupStatus.className = 'appointment-dni-status success';
+            lookupStatus.textContent = '✓ Identidad encontrada en RENIEC';
+        } catch (error) {
+            appointmentName.value = '';
+            appointmentForm.elements.first_names.value = '';
+            appointmentForm.elements.paternal_surname.value = '';
+            appointmentForm.elements.maternal_surname.value = '';
+            appointmentName.readOnly = false;
+            lookupStatus.className = 'appointment-dni-status error';
+            lookupStatus.textContent = `${error.message} Puedes ingresar el nombre manualmente.`;
+        } finally {
+            appointmentDni.classList.remove('is-loading');
+        }
+    };
+    appointmentDni.addEventListener('input', () => {
+        clearTimeout(lookupTimer);
+        if (appointmentDni.value.replace(/\D/g,'').length < 8) {
+            lastDni = ''; appointmentName.value = ''; appointmentName.readOnly = false; lookupStatus.textContent = '';
+            appointmentForm.elements.first_names.value = ''; appointmentForm.elements.paternal_surname.value = ''; appointmentForm.elements.maternal_surname.value = '';
+        }
+        lookupTimer = setTimeout(lookupAppointmentDni, 350);
+    });
+    appointmentDni.addEventListener('blur', lookupAppointmentDni);
+    manualButton.addEventListener('click', () => {
+        manualDniEntry = !manualDniEntry;
+        appointmentName.readOnly = false;
+        if (manualDniEntry) { appointmentForm.elements.first_names.value=''; appointmentForm.elements.paternal_surname.value=''; appointmentForm.elements.maternal_surname.value=''; }
+        appointmentDni.classList.toggle('manual-entry', manualDniEntry);
+        appointmentName.classList.toggle('manual-entry', manualDniEntry);
+        manualButton.textContent = manualDniEntry ? '↻ Usar consulta automática' : '✎ Ingreso manual';
+        lookupStatus.className = `appointment-dni-status ${manualDniEntry ? 'manual' : ''}`;
+        lookupStatus.textContent = manualDniEntry ? 'Modo manual activo: no se consumirán consultas RENIEC.' : 'Escribe los 8 dígitos para consultar RENIEC.';
+        lastDni = '';
+        if (!manualDniEntry && appointmentDni.value.length === 8) lookupAppointmentDni();
+    });
+}
 if (document.getElementById('currentTime')) document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('es-PE', {hour:'2-digit',minute:'2-digit'});
 
 document.getElementById('scanDni')?.addEventListener('click',async()=>{
@@ -267,6 +346,10 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
         result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('')}</div><div><strong>${data.patient.name}</strong><p>DNI ${data.patient.dni} · Seguro ${data.patient.insurance||'No registrado'}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${data.appointments.map(a=>`<article><div class="appointment-date"><strong>${a.time}</strong><small>${a.date}</small></div><div><span>${a.service}</span><h3>${a.type}</h3><p>${a.location||'Ubicación por confirmar'}</p>${a.preparation?`<small class="prep">Preparación: ${a.preparation}</small>`:''}</div><b>${a.status}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>'}</div>`;
     }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
 });
+document.getElementById('portalDni')?.addEventListener('input', event => event.target.value = event.target.value.replace(/\D/g,'').slice(0,8));
+document.getElementById('portalDni')?.addEventListener('keydown', event => {
+    if(event.key === 'Enter'){ event.preventDefault(); document.getElementById('portalSearch')?.click(); }
+});
 
 document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{
     const button=document.getElementById('passkeyLogin');button.disabled=true;
@@ -274,5 +357,14 @@ document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{
 });
 document.getElementById('passkeyRegister')?.addEventListener('click',async()=>{
     const button=document.getElementById('passkeyRegister');button.disabled=true;button.textContent='Esperando confirmación del dispositivo...';
-    try{await Passkeys.register({name:`Dispositivo ${new Date().toLocaleDateString('es-PE')}`});button.textContent='✓ Huella configurada correctamente';setTimeout(()=>window.location.reload(),900);}catch(error){button.textContent='No se pudo configurar. Intenta nuevamente.';button.classList.add('passkey-error');button.disabled=false;}
+    try{
+        if(!window.isSecureContext) throw new Error('La huella requiere HTTPS o localhost.');
+        if(!Passkeys.isSupported()) throw new Error('Este navegador o dispositivo no admite huella o Passkeys.');
+        await Passkeys.register({name:`Dispositivo ${new Date().toLocaleDateString('es-PE')}`});
+        button.textContent='✓ Huella configurada correctamente';setTimeout(()=>window.location.reload(),900);
+    }catch(error){
+        const cancelled=['NotAllowedError','AbortError'].includes(error?.name);
+        button.textContent=cancelled?'La configuración fue cancelada. Intenta nuevamente.':(error?.message||'No se pudo configurar la huella.');
+        button.classList.add('passkey-error');button.disabled=false;
+    }
 });
