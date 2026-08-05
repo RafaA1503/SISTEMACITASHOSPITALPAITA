@@ -1,4 +1,33 @@
 import './bootstrap';
+import { Passkeys } from '@laravel/passkeys';
+
+const savedTheme = localStorage.getItem('hospital-theme');
+const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const applyTheme = theme => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    localStorage.setItem('hospital-theme', theme);
+    const button = document.getElementById('themeToggle');
+    if (button) {
+        button.innerHTML = theme === 'dark' ? '<span>☀</span><b>Modo claro</b>' : '<span>☾</span><b>Modo oscuro</b>';
+        button.setAttribute('aria-label', theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro');
+    }
+};
+applyTheme(savedTheme || preferredTheme);
+const themeToggle = document.createElement('button');
+themeToggle.type = 'button';
+themeToggle.id = 'themeToggle';
+themeToggle.className = 'theme-toggle';
+document.body.appendChild(themeToggle);
+applyTheme(document.documentElement.dataset.theme);
+themeToggle.addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+document.getElementById('togglePassword')?.addEventListener('click', event => {
+    const input = document.getElementById('loginPassword');
+    const visible = input.type === 'text';
+    input.type = visible ? 'password' : 'text';
+    event.currentTarget.textContent = visible ? 'Mostrar' : 'Ocultar';
+});
 
 const rows = window.appointments || [];
 const body = document.getElementById('appointmentsBody');
@@ -123,6 +152,19 @@ document.getElementById('scanDni')?.addEventListener('click',async()=>{
 });
 
 document.getElementById('roleMenu')?.addEventListener('click',()=>document.querySelector('.role-sidebar')?.classList.toggle('open'));
+const userMenuButton = document.getElementById('userMenuButton');
+const userDropdown = document.getElementById('userDropdown');
+userMenuButton?.addEventListener('click', event => {
+    event.stopPropagation();
+    userDropdown.hidden = !userDropdown.hidden;
+    userMenuButton.setAttribute('aria-expanded', String(!userDropdown.hidden));
+});
+document.addEventListener('click', event => {
+    if (userDropdown && !userDropdown.hidden && !event.target.closest('.user-menu')) {
+        userDropdown.hidden = true;
+        userMenuButton?.setAttribute('aria-expanded', 'false');
+    }
+});
 document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
     if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
@@ -130,4 +172,13 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
         result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('')}</div><div><strong>${data.patient.name}</strong><p>DNI ${data.patient.dni} · Seguro ${data.patient.insurance||'No registrado'}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${data.appointments.map(a=>`<article><div class="appointment-date"><strong>${a.time}</strong><small>${a.date}</small></div><div><span>${a.service}</span><h3>${a.type}</h3><p>${a.location||'Ubicación por confirmar'}</p>${a.preparation?`<small class="prep">Preparación: ${a.preparation}</small>`:''}</div><b>${a.status}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>'}</div>`;
     }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
+});
+
+document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{
+    const button=document.getElementById('passkeyLogin');button.disabled=true;
+    try{await Passkeys.verify();window.location.href='/portal';}catch(error){button.classList.add('passkey-error');button.querySelector('small').textContent='No se pudo verificar. Intenta nuevamente.';}finally{button.disabled=false;}
+});
+document.getElementById('passkeyRegister')?.addEventListener('click',async()=>{
+    const button=document.getElementById('passkeyRegister');button.disabled=true;button.textContent='Esperando confirmación del dispositivo...';
+    try{await Passkeys.register({name:`Dispositivo ${new Date().toLocaleDateString('es-PE')}`});button.textContent='✓ Huella configurada correctamente';setTimeout(()=>window.location.reload(),900);}catch(error){button.textContent='No se pudo configurar. Intenta nuevamente.';button.classList.add('passkey-error');button.disabled=false;}
 });

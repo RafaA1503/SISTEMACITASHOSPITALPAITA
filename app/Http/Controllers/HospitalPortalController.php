@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 class HospitalPortalController extends Controller {
  private const ROLES=['portero','admision','profesional','laboratorio','imagenes','administrador'];
- public function index(string $role='portero'):View {
+ public function index(?string $role=null):View {
+  $role ??= auth()->user()->role;
   abort_unless(in_array($role,self::ROLES,true),404);
+  if(auth()->user()->role!=='administrador' && auth()->user()->role!==$role) abort(403,'No tiene permiso para acceder a este módulo.');
   $today=Appointment::with(['patient','type.service','professional'])->whereDate('scheduled_at',today())->orderBy('scheduled_at')->get();
   $serviceCategory=match($role){'laboratorio'=>'laboratorio','imagenes'=>'imagenes',default=>null};
   if($serviceCategory)$today=$today->filter(fn($a)=>$a->type->service->category===$serviceCategory)->values();
