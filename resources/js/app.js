@@ -8,7 +8,7 @@ const statusFilter = document.getElementById('statusFilter');
 const modal = document.getElementById('detailModal');
 let selected = null;
 
-const statusClass = status => status.toLowerCase().replaceAll(' ', '-').replace('ó','o');
+const statusClass = status => status.toLowerCase().replaceAll(' ', '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 function render(){
     const term = search.value.toLowerCase().trim();
     const filtered = rows.filter(row => {
@@ -38,16 +38,86 @@ function openDetail(row){
     confirm.disabled = row.status === 'Ingresó';
     modal.hidden = false;
 }
-[search, examFilter, statusFilter].forEach(el => el.addEventListener('input', render));
-document.getElementById('clearFilters').addEventListener('click', () => { search.value=''; examFilter.value=''; statusFilter.value=''; render(); });
+if (body) {
+[search, examFilter, statusFilter].forEach(el => el?.addEventListener('input', render));
+document.getElementById('clearFilters')?.addEventListener('click', () => { search.value=''; examFilter.value=''; statusFilter.value=''; render(); });
 document.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.hidden = true));
-modal.addEventListener('click', e => { if(e.target === modal) modal.hidden = true; });
-document.addEventListener('keydown', e => { if(e.key === 'Escape') modal.hidden = true; });
-document.getElementById('confirmEntry').addEventListener('click', () => {
+modal?.addEventListener('click', e => { if(e.target === modal) modal.hidden = true; });
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && modal) modal.hidden = true; });
+document.getElementById('confirmEntry')?.addEventListener('click', () => {
     if(!selected) return;
     selected.status = 'Ingresó'; modal.hidden = true; render();
     const toast = document.getElementById('toast'); toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000);
 });
-document.getElementById('scanBtn').addEventListener('click', () => { search.focus(); search.placeholder = 'Ingresa o escanea el código de la cita...'; });
-document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+document.getElementById('scanBtn')?.addEventListener('click', () => { search.focus(); search.placeholder = 'Ingresa o escanea el código de la cita...'; });
 render();
+}
+
+document.getElementById('menuBtn')?.addEventListener('click', () => document.getElementById('sidebar')?.classList.toggle('open'));
+const showModuleToast = (title = 'Acción completada', message = 'Los cambios se guardaron correctamente.') => {
+    const toast = document.getElementById('moduleToast'); if(!toast) return;
+    toast.querySelector('strong').textContent = title; toast.querySelector('p').textContent = message;
+    toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2800);
+};
+document.querySelectorAll('.moduleAction').forEach(btn => btn.addEventListener('click', () => btn.dataset.url ? window.location.href = btn.dataset.url : showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.')));
+document.getElementById('patientButton')?.addEventListener('click', () => {
+    document.getElementById('patientResult')?.classList.add('visible');
+    showModuleToast('Paciente encontrado', 'Identidad y cita verificadas.');
+});
+document.getElementById('settingsForm')?.addEventListener('submit', e => { e.preventDefault(); showModuleToast('Configuración guardada'); });
+const historySearch = document.getElementById('historySearch');
+const accessFilter = document.getElementById('accessFilter');
+const filterHistory = () => document.querySelectorAll('#historyBody tr').forEach(row => {
+    const matchesText = row.textContent.toLowerCase().includes((historySearch?.value || '').toLowerCase());
+    const matchesType = !accessFilter?.value || row.dataset.movement === accessFilter.value;
+    row.hidden = !(matchesText && matchesType);
+});
+[historySearch, accessFilter].forEach(el => el?.addEventListener('input', filterHistory));
+document.getElementById('helpSearch')?.addEventListener('input', e => document.querySelectorAll('.help-grid article').forEach(card => card.hidden = !card.textContent.toLowerCase().includes(e.target.value.toLowerCase())));
+
+const accessForm = document.getElementById('accessForm');
+const accessDni = document.getElementById('accessDni');
+const registerAccess = document.getElementById('registerAccess');
+document.querySelectorAll('[data-access-type]').forEach(button => button.addEventListener('click', () => {
+    document.querySelectorAll('[data-access-type]').forEach(item => item.classList.remove('active'));
+    button.classList.add('active');
+    const type = button.dataset.accessType;
+    document.getElementById('movementType').value = type;
+    registerAccess.textContent = `Confirmar ${type.toLowerCase()}`;
+    registerAccess.classList.toggle('exit-button', type === 'Salida');
+}));
+const lookupDni = async () => {
+    const hint = document.getElementById('dniHint'); const button = document.getElementById('verifyDni');
+    if (!/^\d{8}$/.test(accessDni.value)) { hint.textContent='Ingresa un DNI válido de 8 dígitos.'; hint.classList.add('error'); return; }
+    button.disabled=true; button.textContent='Consultando...'; hint.classList.remove('error'); hint.textContent='Consumiendo API RENIEC...';
+    try {
+        const response=await fetch(`/api/consultar-dni/${accessDni.value}`,{headers:{Accept:'application/json'}}); const data=await response.json();
+        if(!response.ok) throw new Error(data.message||'No se encontró el DNI.');
+        document.getElementById('identifiedInitials').textContent=data.nombre_completo.split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase();
+        document.getElementById('identifiedName').textContent=data.nombre_completo; document.getElementById('identifiedDni').textContent=`Paciente · DNI ${data.dni}`;
+        document.getElementById('identifiedPerson').hidden=false; registerAccess.disabled=false; hint.textContent='Nombre completo obtenido correctamente.';
+    } catch(error) { hint.textContent=error.message; hint.classList.add('error'); document.getElementById('identifiedPerson').hidden=true; registerAccess.disabled=true; }
+    finally { button.disabled=false; button.textContent='Consultar'; }
+};
+document.getElementById('verifyDni')?.addEventListener('click',lookupDni);
+accessDni?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();lookupDni();}});
+accessDni?.addEventListener('input', () => { registerAccess.disabled = true; document.getElementById('identifiedPerson').hidden = true; });
+accessForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    const type = document.getElementById('movementType').value;
+    const recent = document.getElementById('recentAccessList');
+    const now = new Date().toLocaleTimeString('es-PE', {hour:'2-digit', minute:'2-digit'});
+    recent.insertAdjacentHTML('afterbegin', `<article class="new-movement"><span class="recent-arrow ${type.toLowerCase()}">${type === 'Ingreso' ? '→' : '←'}</span><div><strong>Ana Ruiz Mendoza</strong><p>${type} · ${document.getElementById('accessPoint').value}</p></div><time>${now}</time></article>`);
+    showModuleToast(`${type} registrado`, `El movimiento de Ana Ruiz Mendoza se guardó a las ${now}.`);
+    accessForm.reset(); document.getElementById('identifiedPerson').hidden = true; registerAccess.disabled = true;
+});
+if (document.getElementById('currentTime')) document.getElementById('currentTime').textContent = new Date().toLocaleTimeString('es-PE', {hour:'2-digit',minute:'2-digit'});
+
+document.getElementById('scanDni')?.addEventListener('click',async()=>{
+    if(!('BarcodeDetector' in window)){showModuleToast('Escáner no compatible','Escribe el DNI y pulsa Consultar.');return;}
+    let stream; const overlay=document.createElement('div'); overlay.className='scanner-overlay'; overlay.innerHTML='<section><button type="button">×</button><h2>Escanear DNI</h2><p>Coloca el código del documento dentro del recuadro.</p><div class="camera-frame"><video autoplay playsinline></video><i></i></div><small>La cámara se cerrará al detectar 8 dígitos.</small></section>'; document.body.appendChild(overlay);
+    const video=overlay.querySelector('video'); let active=true; const close=()=>{active=false;stream?.getTracks().forEach(track=>track.stop());overlay.remove();}; overlay.querySelector('button').addEventListener('click',close);
+    try { stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}}); video.srcObject=stream; const detector=new BarcodeDetector({formats:['qr_code','pdf417','code_128','code_39']});
+        const detect=async()=>{if(!active)return;try{for(const code of await detector.detect(video)){const match=code.rawValue.match(/\b\d{8}\b/);if(match){accessDni.value=match[0];close();await lookupDni();return;}}}catch{}requestAnimationFrame(detect);};detect();
+    } catch {close();showModuleToast('No se pudo abrir la cámara','Revisa el permiso de cámara o escribe el DNI manualmente.');}
+});

@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Control de acceso y citas para exámenes del Hospital San Gabriel">
-    <title>Acceso Clínico | Hospital San Gabriel</title>
+    <meta name="description" content="Control de acceso y citas para exámenes del Hospital La Merced Paita">
+    <title>Acceso Clínico | Hospital La Merced Paita</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
@@ -14,20 +14,21 @@
 <div class="app-shell">
     <aside class="sidebar" id="sidebar">
         <div class="brand">
-            <div class="brand-mark"><span></span><span></span></div>
-            <div><strong>San Gabriel</strong><small>Hospital General</small></div>
+            <div class="brand-mark"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo del Hospital La Merced Paita"></div>
+            <div><strong>Hospital La Merced</strong><small>Paita · Piura</small></div>
         </div>
         <nav aria-label="Navegación principal">
-            <a class="nav-item active" href="#"><span class="nav-icon">⌂</span>Inicio</a>
-            <a class="nav-item" href="#citas"><span class="nav-icon">▣</span>Citas del día <b>18</b></a>
-            <a class="nav-item" href="#"><span class="nav-icon">⌕</span>Buscar paciente</a>
-            <a class="nav-item" href="#"><span class="nav-icon">◷</span>Historial</a>
+            <a class="nav-item active" href="{{ route('inicio') }}"><span class="nav-icon">⌂</span>Inicio</a>
+            <a class="nav-item" href="{{ route('citas') }}"><span class="nav-icon">▣</span>Citas del día <b>18</b></a>
+            <a class="nav-item" href="{{ route('pacientes') }}"><span class="nav-icon">⌕</span>Buscar paciente</a>
+            <a class="nav-item" href="{{ route('accesos') }}"><span class="nav-icon">⇄</span>Registrar acceso</a>
+            <a class="nav-item" href="{{ route('historial') }}"><span class="nav-icon">◷</span>Historial</a>
         </nav>
         <div class="side-divider"></div>
         <p class="nav-label">GESTIÓN</p>
         <nav>
-            <a class="nav-item" href="#"><span class="nav-icon">⚙</span>Configuración</a>
-            <a class="nav-item" href="#"><span class="nav-icon">?</span>Ayuda</a>
+            <a class="nav-item" href="{{ route('configuracion') }}"><span class="nav-icon">⚙</span>Configuración</a>
+            <a class="nav-item" href="{{ route('ayuda') }}"><span class="nav-icon">?</span>Ayuda</a>
         </nav>
         <div class="shift-card">
             <span class="shift-dot"></span>
@@ -43,7 +44,7 @@
     <main>
         <header class="topbar">
             <button class="menu-btn" id="menuBtn" aria-label="Abrir menú">☰</button>
-            <div class="mobile-brand">San Gabriel</div>
+            <div class="mobile-brand"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt=""> La Merced Paita</div>
             <div class="top-actions">
                 <span class="live"><i></i>Sistema operativo</span>
                 <button class="icon-btn" aria-label="Notificaciones">♢<em>2</em></button>
@@ -84,7 +85,7 @@
                 </div>
                 <div class="table-footer"><p>Mostrando <strong id="resultCount">6</strong> de 18 citas</p><div><button disabled>‹</button><button class="active">1</button><button>2</button><button>3</button><button>›</button></div></div>
             </section>
-            <footer><p>Hospital San Gabriel · Control de acceso</p><p><span></span> Conexión segura · Datos actualizados en tiempo real</p></footer>
+            <footer><p>Hospital La Merced Paita · Control de acceso</p><p><span></span> Conexión segura · Datos actualizados en tiempo real</p></footer>
         </div>
     </main>
 </div>

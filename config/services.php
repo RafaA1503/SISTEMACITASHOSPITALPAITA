@@ -2,6 +2,11 @@
 
 return [
 
+    'codart' => [
+        'url' => env('CODART_API_URL'),
+        'token' => env('CODART_API_TOKEN'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

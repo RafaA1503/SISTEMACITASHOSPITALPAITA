@@ -11,7 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Ngrok y otros proxies terminan HTTPS antes de reenviar la petición.
+        // Confiar en sus cabeceras evita generar recursos HTTP bloqueados en móviles.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
