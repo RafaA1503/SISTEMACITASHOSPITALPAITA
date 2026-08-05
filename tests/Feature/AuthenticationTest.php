@@ -63,6 +63,6 @@ class AuthenticationTest extends TestCase {
  }
  public function test_saved_dark_theme_is_applied_before_page_render():void {
   $this->seed(); $user=User::where('role','administrador')->firstOrFail();
-  $this->actingAs($user)->withCookie('hospital_theme','dark')->get('/portal/administrador')->assertOk()->assertSee('<html data-theme="dark"',false);
+  $this->actingAs($user)->withUnencryptedCookie('hospital_theme','dark')->get('/portal/administrador')->assertOk()->assertSee('<html data-theme="dark"',false);
  }
 }
