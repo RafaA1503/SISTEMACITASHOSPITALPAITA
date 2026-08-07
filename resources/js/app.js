@@ -141,6 +141,12 @@ render();
 }
 
 document.getElementById('menuBtn')?.addEventListener('click', () => document.getElementById('sidebar')?.classList.toggle('open'));
+const liveClock = document.getElementById('liveClock');
+if (liveClock) {
+    const updateClock = () => { liveClock.textContent = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); };
+    updateClock();
+    setInterval(updateClock, 1000);
+}
 const showModuleToast = (title = 'Acción completada', message = 'Los cambios se guardaron correctamente.') => {
     const toast = document.getElementById('moduleToast'); if(!toast) return;
     toast.querySelector('strong').textContent = title; toast.querySelector('p').textContent = message;
@@ -265,13 +271,21 @@ if (appointmentDni && appointmentName) {
             appointmentForm.elements.first_names.value = data.nombres || '';
             appointmentForm.elements.paternal_surname.value = data.apellido_paterno || '';
             appointmentForm.elements.maternal_surname.value = data.apellido_materno || '';
+            if (data.direccion) appointmentForm.elements.address.value = data.direccion;
+            if (data.fecha_nacimiento) appointmentForm.elements.birth_date.value = data.fecha_nacimiento;
+            if (data.sexo) appointmentForm.elements.sex.value = data.sexo;
+            const hasExtra = data.direccion || data.fecha_nacimiento || data.sexo;
+            if (hasExtra) patientDetails.open = true;
             lookupStatus.className = 'appointment-dni-status success';
-            lookupStatus.textContent = '✓ Identidad encontrada en RENIEC';
+            lookupStatus.textContent = hasExtra ? '✓ Identidad y datos adicionales encontrados en RENIEC' : '✓ Identidad encontrada en RENIEC';
         } catch (error) {
             appointmentName.value = '';
             appointmentForm.elements.first_names.value = '';
             appointmentForm.elements.paternal_surname.value = '';
             appointmentForm.elements.maternal_surname.value = '';
+            appointmentForm.elements.address.value = '';
+            appointmentForm.elements.birth_date.value = '';
+            appointmentForm.elements.sex.value = '';
             appointmentName.readOnly = false;
             lookupStatus.className = 'appointment-dni-status error';
             lookupStatus.textContent = `${error.message} Puedes ingresar el nombre manualmente.`;
@@ -362,6 +376,58 @@ document.addEventListener('click', event => {
         userMenuButton?.setAttribute('aria-expanded', 'false');
     }
 });
+document.getElementById('patientsDateFilter')?.addEventListener('change', event => event.currentTarget.requestSubmit());
+const patientsSearch = document.getElementById('patientsSearch');
+if (patientsSearch) {
+    const patientsServiceFilter = document.getElementById('patientsServiceFilter');
+    const patientsStatusFilter = document.getElementById('patientsStatusFilter');
+    const patientsRows = [...document.querySelectorAll('#patientsTableBody tr[data-search]')];
+    const patientsEmpty = document.getElementById('patientsFilterEmpty');
+    const applyPatientFilters = () => {
+        const term = patientsSearch.value.trim().toLocaleLowerCase('es');
+        const service = patientsServiceFilter.value;
+        const status = patientsStatusFilter.value;
+        let visible = 0;
+        patientsRows.forEach(row => {
+            const matches = (!term || row.dataset.search.includes(term)) && (!service || row.dataset.service === service) && (!status || row.dataset.status === status);
+            row.hidden = !matches;
+            if (matches) visible++;
+        });
+        if (patientsEmpty) patientsEmpty.hidden = patientsRows.length === 0 || visible !== 0;
+    };
+    patientsSearch.addEventListener('input', applyPatientFilters);
+    patientsServiceFilter.addEventListener('change', applyPatientFilters);
+    patientsStatusFilter.addEventListener('change', applyPatientFilters);
+}
+const notifBell = document.getElementById('notifBell');
+if (notifBell) {
+    const notifBadge = document.getElementById('notifBadge');
+    const notifTarget = document.querySelector(notifBell.dataset.target);
+    notifBell.addEventListener('click', () => {
+        notifTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        notifTarget?.classList.add('highlight-flash');
+        setTimeout(() => notifTarget?.classList.remove('highlight-flash'), 1200);
+    });
+    let lastKnownCount = parseInt(notifBadge?.textContent || '0', 10);
+    const pollPending = async () => {
+        try {
+            const response = await fetch(notifBell.dataset.pollUrl, { headers: { Accept: 'application/json' } });
+            if (!response.ok) return;
+            const { count } = await response.json();
+            if (notifBadge) {
+                notifBadge.textContent = count;
+                notifBadge.classList.toggle('notif-hidden', count === 0);
+            }
+            if (count !== lastKnownCount) {
+                notifBell.classList.add('notif-pulse');
+                setTimeout(() => notifBell.classList.remove('notif-pulse'), 1500);
+                if (count > lastKnownCount) window.location.reload();
+                lastKnownCount = count;
+            }
+        } catch { /* red intermitente: se reintenta en el siguiente ciclo */ }
+    };
+    setInterval(pollPending, 20000);
+}
 document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
     if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}

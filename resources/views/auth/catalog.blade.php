@@ -22,6 +22,18 @@
     <button class="login-primary">Crear profesional</button>
    </form>
   </section></div>
+  <section class="portal-panel"><div class="panel-title"><div><h2>Programar turnos de profesionales</h2><p>Jornadas importadas de jornadaslaborales (SIGESA): profesional, servicio, área, jornada y fecha.</p></div></div>
+   <form method="POST" action="{{ route('admin.professionals.schedule.store') }}" class="appointment-form">@csrf
+    <label>Profesional<select name="professional_id" required><option value="">Seleccionar</option>@foreach($professionals as $professional)<option value="{{ $professional->id }}">{{ $professional->name }} — {{ $professional->service?->name }}</option>@endforeach</select></label>
+    <label>Servicio<select name="service_id" required><option value="">Seleccionar</option>@foreach($services as $service)<option value="{{ $service->id }}">{{ $service->legacy_id }} - {{ $service->name }}</option>@endforeach</select></label>
+    <label>Área<select name="service_area_id"><option value="">Sin área específica</option>@foreach($areas as $area)<option value="{{ $area->id }}">{{ $area->service->name }} - {{ $area->name }}</option>@endforeach</select></label>
+    <label>Jornada<select name="work_shift_id" required><option value="">Seleccionar</option>@foreach($shifts as $shift)<option value="{{ $shift->id }}">{{ $shift->abbreviation ? $shift->abbreviation.' - ' : '' }}{{ $shift->name }} ({{ $shift->starts_at?->format('H:i') }}–{{ $shift->ends_at?->format('H:i') }}){{ $shift->service ? ' · '.$shift->service->name : '' }}</option>@endforeach</select></label>
+    <label>Fecha<input name="scheduled_date" type="date" min="{{ today()->format('Y-m-d') }}" required></label>
+    <label>Observación<input name="notes" maxlength="500"></label>
+    <button class="primary-btn form-wide">Registrar turno</button>
+   </form>
+   <div class="portal-table"><table><thead><tr><th>FECHA</th><th>PROFESIONAL</th><th>SERVICIO / ÁREA</th><th>JORNADA</th></tr></thead><tbody>@forelse($schedules as $schedule)<tr><td>{{ $schedule->scheduled_date->format('d/m/Y') }}</td><td>{{ $schedule->professional->name }}</td><td>{{ $schedule->service->name }}{{ $schedule->area ? ' - '.$schedule->area->name : '' }}</td><td>{{ $schedule->shift->abbreviation ?: $schedule->shift->name }} ({{ $schedule->shift->starts_at?->format('H:i') }}–{{ $schedule->shift->ends_at?->format('H:i') }})</td></tr>@empty<tr><td colspan="4" class="portal-empty">No hay turnos programados.</td></tr>@endforelse</tbody></table></div>
+  </section>
   <div class="admin-heading catalog-heading"><div><h1>Catalogo de servicios</h1><span>Catalogo de solo lectura: se conserva el numero original, sin codigos SIG generados.</span></div></div>
   <section class="portal-panel">
    <div class="catalog-service-tools"><input id="serviceCatalogSearch" type="search" placeholder="Buscar por numero, servicio, especialidad o tipo..."></div>

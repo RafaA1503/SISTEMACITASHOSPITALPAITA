@@ -52,8 +52,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/citas/registrar', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
     Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
+    Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
     Route::put('/citas/{appointment}/atender', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
+    Route::get('/administracion/reportes/excel', [ReportController::class, 'exportExcel'])->name('admin.reports.excel');
+    Route::get('/administracion/reportes/pdf', [ReportController::class, 'exportPdf'])->name('admin.reports.pdf');
     Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
     Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
     Route::put('/administracion/roles/{customRole}', [RoleController::class, 'update'])->name('admin.roles.update');

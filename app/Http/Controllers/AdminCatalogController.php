@@ -28,6 +28,11 @@ class AdminCatalogController extends Controller
                 ->get(),
             'professionals' => User::with('service')->whereIn('role', ['profesional', 'laboratorio', 'imagenes'])->whereNotNull('service_id')->orderBy('name')->get(),
             'areas' => ServiceArea::with('service')->where('active', true)->orderBy('name')->get(),
+            'shifts' => WorkShift::with('service')->where('active', true)->orderBy('name')->get(),
+            'schedules' => ProfessionalSchedule::with(['professional', 'service', 'area', 'shift'])
+                ->whereDate('scheduled_date', '>=', today())
+                ->orderBy('scheduled_date')
+                ->get(),
         ]);
     }
 
@@ -65,9 +70,15 @@ class AdminCatalogController extends Controller
             'notes' => 'nullable|string|max:500',
         ]);
 
-        if (! User::whereKey($data['professional_id'])->whereIn('role', ['profesional', 'laboratorio', 'imagenes'])->where('active', true)->exists()) abort(422, 'El profesional no está activo.');
-        if (! WorkShift::whereKey($data['work_shift_id'])->where(fn ($query) => $query->whereNull('service_id')->orWhere('service_id', $data['service_id']))->exists()) abort(422, 'La jornada no corresponde al servicio.');
-        if (! empty($data['service_area_id'])) abort_unless(ServiceArea::whereKey($data['service_area_id'])->where('service_id', $data['service_id'])->exists(), 422, 'El área no pertenece al servicio.');
+        if (! User::whereKey($data['professional_id'])->whereIn('role', ['profesional', 'laboratorio', 'imagenes'])->where('active', true)->exists()) {
+            return back()->withInput()->withErrors('El profesional no está activo.');
+        }
+        if (! WorkShift::whereKey($data['work_shift_id'])->where(fn ($query) => $query->whereNull('service_id')->orWhere('service_id', $data['service_id']))->exists()) {
+            return back()->withInput()->withErrors('La jornada no corresponde al servicio.');
+        }
+        if (! empty($data['service_area_id']) && ! ServiceArea::whereKey($data['service_area_id'])->where('service_id', $data['service_id'])->exists()) {
+            return back()->withInput()->withErrors('El área no pertenece al servicio.');
+        }
 
         ProfessionalSchedule::updateOrCreate([
             'professional_id' => $data['professional_id'],

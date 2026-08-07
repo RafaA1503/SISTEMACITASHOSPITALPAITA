@@ -16,6 +16,8 @@
    <label>Hasta<input type="date" name="to" value="{{ $filters['to'] }}"></label>
    <label>Servicio<select name="service_id"><option value="">Todos los servicios</option>@foreach($services as $service)<option value="{{ $service->id }}" @selected($filters['service_id']==$service->id)>{{ $service->name }}</option>@endforeach</select></label>
    <button class="login-primary">Filtrar</button>
+   <a class="outline-btn" href="{{ route('admin.reports.excel', $filters) }}">⇩ Excel</a>
+   <a class="outline-btn" href="{{ route('admin.reports.pdf', $filters) }}">⇩ PDF</a>
   </form>
 
   <section class="module-metrics report-metrics">
