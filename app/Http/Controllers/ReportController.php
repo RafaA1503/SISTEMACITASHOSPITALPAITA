@@ -61,7 +61,7 @@ class ReportController extends Controller
         $to = $request->date('to') ?: today();
         $serviceId = $request->integer('service_id') ?: null;
 
-        $appointments = Appointment::with(['patient', 'type.service', 'professional'])
+        $appointments = Appointment::with(['patient', 'type.service', 'trabajador.persona'])
             ->whereBetween('scheduled_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->when($serviceId, fn ($query) => $query->whereHas('type', fn ($t) => $t->where('service_id', $serviceId)))
             ->orderByDesc('scheduled_at')

@@ -1,6 +1,28 @@
 import './bootstrap';
 import { Passkeys } from '@laravel/passkeys';
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+
+const serviceCatalogSearch = document.getElementById('serviceCatalogSearch');
+if (serviceCatalogSearch) {
+    const serviceCards = [...document.querySelectorAll('#serviceCatalog article')];
+    const serviceCatalogEmpty = document.getElementById('serviceCatalogEmpty');
+    serviceCatalogSearch.addEventListener('input', () => {
+        const term = serviceCatalogSearch.value.trim().toLocaleLowerCase('es');
+        let visible = 0;
+        serviceCards.forEach(card => {
+            const show = !term || card.dataset.serviceSearch.includes(term);
+            card.hidden = !show;
+            if (show) visible++;
+        });
+        if (serviceCatalogEmpty) serviceCatalogEmpty.hidden = visible !== 0;
+    });
+}
+
+document.querySelectorAll('.confirm-delete-form').forEach(form => form.addEventListener('submit', event => {
+    if (!confirm(form.dataset.confirmMessage)) event.preventDefault();
+}));
+
 document.querySelectorAll('.module-permissions label').forEach(label => {
     if (label.textContent.includes('Agenda por servicio')) label.lastChild.textContent = ' Atención profesional';
 });
@@ -433,7 +455,9 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
     button.disabled=true;button.textContent='Buscando...';
     try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
-        result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('')}</div><div><strong>${data.patient.name}</strong><p>DNI ${data.patient.dni} · Seguro ${data.patient.insurance||'No registrado'}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${data.appointments.map(a=>`<article><div class="appointment-date"><strong>${a.time}</strong><small>${a.date}</small></div><div><span>${a.service}</span><h3>${a.type}</h3><p>${a.location||'Ubicación por confirmar'}</p>${a.preparation?`<small class="prep">Preparación: ${a.preparation}</small>`:''}</div><b>${a.status}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>'}</div>`;
+        const initials=escapeHtml(data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join(''));
+        const cards=data.appointments.map(a=>`<article><div class="appointment-date"><strong>${escapeHtml(a.time)}</strong><small>${escapeHtml(a.date)}</small></div><div><span>${escapeHtml(a.service)}</span><h3>${escapeHtml(a.type)}</h3><p>${escapeHtml(a.location||'Ubicación por confirmar')}</p>${a.preparation?`<small class="prep">Preparación: ${escapeHtml(a.preparation)}</small>`:''}</div><b>${escapeHtml(a.status)}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>';
+        result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${initials}</div><div><strong>${escapeHtml(data.patient.name)}</strong><p>DNI ${escapeHtml(data.patient.dni)} · Seguro ${escapeHtml(data.patient.insurance||'No registrado')}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${cards}</div>`;
     }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
 });
 document.getElementById('portalDni')?.addEventListener('input', event => {
@@ -443,6 +467,67 @@ document.getElementById('portalDni')?.addEventListener('input', event => {
 document.getElementById('portalDni')?.addEventListener('keydown', event => {
     if(event.key === 'Enter'){ event.preventDefault(); document.getElementById('portalSearch')?.click(); }
 });
+
+const scanBtn = document.getElementById('portalScanBtn');
+if (scanBtn) {
+    const scanModal = document.getElementById('scanModal');
+    const scanVideo = document.getElementById('scanVideo');
+    const scanHint = document.getElementById('scanHint');
+    let scanStream = null;
+    let scanRafId = null;
+
+    const extractDni = raw => {
+        const boundaryMatch = raw.match(/\b\d{8}\b/);
+        if (boundaryMatch) return boundaryMatch[0];
+        const digitsOnly = raw.replace(/\D/g, '');
+        return digitsOnly.length >= 8 ? digitsOnly.slice(0, 8) : null;
+    };
+
+    const stopScan = () => {
+        if (scanRafId) cancelAnimationFrame(scanRafId);
+        scanRafId = null;
+        scanStream?.getTracks().forEach(track => track.stop());
+        scanStream = null;
+        scanModal.hidden = true;
+    };
+
+    const scanFrame = async detector => {
+        if (!scanStream) return;
+        try {
+            const codes = await detector.detect(scanVideo);
+            const dni = codes.length ? extractDni(codes[0].rawValue) : null;
+            if (dni) {
+                const input = document.getElementById('portalDni');
+                input.value = dni;
+                stopScan();
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
+            }
+        } catch { /* frame not ready yet, keep trying */ }
+        scanRafId = requestAnimationFrame(() => scanFrame(detector));
+    };
+
+    const startScan = async () => {
+        scanModal.hidden = false;
+        if (!('BarcodeDetector' in window)) {
+            scanHint.textContent = 'Tu navegador no soporta escaneo por cámara. Usa un lector USB/Bluetooth o ingresa el DNI manualmente.';
+            return;
+        }
+        scanHint.textContent = 'Apunta la cámara al código de barras.';
+        try {
+            scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            scanVideo.srcObject = scanStream;
+            const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'code_93', 'codabar', 'ean_13', 'ean_8', 'itf', 'pdf417', 'qr_code'] });
+            scanRafId = requestAnimationFrame(() => scanFrame(detector));
+        } catch (error) {
+            scanHint.textContent = 'No se pudo acceder a la cámara. Revisa los permisos del navegador.';
+        }
+    };
+
+    scanBtn.addEventListener('click', startScan);
+    document.getElementById('scanModalClose')?.addEventListener('click', stopScan);
+    scanModal.addEventListener('click', event => { if (event.target === scanModal) stopScan(); });
+}
 
 document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{
     const button=document.getElementById('passkeyLogin');button.disabled=true;

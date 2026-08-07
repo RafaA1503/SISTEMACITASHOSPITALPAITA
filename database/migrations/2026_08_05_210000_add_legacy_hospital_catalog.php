@@ -63,25 +63,12 @@ return new class extends Migration {
             $table->timestamps();
         });
 
-        Schema::table('patients', function (Blueprint $table) {
-            $table->unsignedInteger('legacy_id')->nullable()->unique()->after('id');
-            $table->string('medical_record_number', 30)->nullable()->index();
-        });
-
-        Schema::table('appointments', function (Blueprint $table) {
-            $table->unsignedInteger('legacy_cita_id')->nullable()->unique()->after('id');
-            $table->unsignedInteger('legacy_atencion_id')->nullable()->unique()->after('legacy_cita_id');
-            $table->foreignId('service_area_id')->nullable()->after('appointment_type_id')->constrained()->nullOnDelete();
-            $table->foreignId('service_subarea_id')->nullable()->after('service_area_id')->constrained()->nullOnDelete();
-        });
+        // `patients`/`appointments` ya no existen: se reemplazan por `pacientes`
+        // (legacy) y `citas_control_acceso` (nueva, ver 2026_08_08_000000).
     }
 
     public function down(): void
     {
-        Schema::table('appointments', fn (Blueprint $table) => $table->dropConstrainedForeignId('service_subarea_id'));
-        Schema::table('appointments', fn (Blueprint $table) => $table->dropConstrainedForeignId('service_area_id'));
-        Schema::table('appointments', fn (Blueprint $table) => $table->dropColumn(['legacy_cita_id', 'legacy_atencion_id']));
-        Schema::table('patients', fn (Blueprint $table) => $table->dropColumn(['legacy_id', 'medical_record_number']));
         Schema::dropIfExists('service_subareas');
         Schema::dropIfExists('service_areas');
         Schema::table('services', fn (Blueprint $table) => $table->dropConstrainedForeignId('service_type_id'));

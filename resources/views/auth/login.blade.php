@@ -4,10 +4,12 @@
 <body class="auth-body"><main class="login-shell">
 <section class="login-brand"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo"><div><p>SISTEMA HOSPITALARIO</p><h1>Hospital Nuestra Señora de las Mercedes</h1><span>Acceso seguro para el personal autorizado.</span></div><small>Red de Salud · Paita · Piura</small></section>
 <section class="login-card"><div><p class="eyebrow">BIENVENIDO</p><h2>Iniciar sesión</h2><span>Ingresa con tu cuenta institucional.</span></div>
+@if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif
 @if($errors->any())<div class="auth-error">{{ $errors->first() }}</div>@endif
 <form method="POST" action="{{ route('login.store') }}">@csrf
 <label>Correo institucional<input name="email" type="email" value="{{ old('email') }}" required autofocus autocomplete="username" placeholder="usuario@lamerced.gob.pe"></label>
 <label>Contraseña<div class="password-field"><input id="loginPassword" name="password" type="password" required autocomplete="current-password" placeholder="••••••••"><button id="togglePassword" type="button">Mostrar</button></div></label>
 <label class="remember"><input type="checkbox" name="remember"> Mantener sesión iniciada</label><button class="login-primary">Ingresar al sistema</button></form>
+<a class="forgot-password-link" href="{{ route('password.request') }}">¿Olvidaste tu contraseña?</a>
 <div class="auth-divider"><span>o ingresa de forma segura</span></div><button class="passkey-login" id="passkeyLogin"><span>◎</span><div><strong>Usar huella o Passkey</strong><small>Huella, Face ID o Windows Hello</small></div></button><p class="auth-note">La información biométrica permanece protegida en tu dispositivo.</p>
 </section></main></body></html>

@@ -16,6 +16,7 @@
    <h2>Crear profesional</h2><p>Crea sus credenciales y asignalo a un servicio del catalogo importado.</p>
    <form method="POST" action="{{ route('admin.professionals.store') }}">@csrf
     <label>Nombre completo<input name="name" required placeholder="Dr. Nombre Apellido"></label>
+    <label>DNI<input name="dni" required pattern="[0-9]{8}" maxlength="8" placeholder="8 dígitos"></label>
     <label>Correo institucional<input name="email" type="email" required></label>
     <label>Contrasena inicial<input name="password" type="password" minlength="8" required></label>
     <label>Servicio<select name="service_id" required><option value="">Seleccionar</option>@foreach($services as $service)<option value="{{ $service->id }}">{{ $service->legacy_id }} - {{ $service->name }}</option>@endforeach</select></label>
@@ -32,7 +33,7 @@
     <label>Observación<input name="notes" maxlength="500"></label>
     <button class="primary-btn form-wide">Registrar turno</button>
    </form>
-   <div class="portal-table"><table><thead><tr><th>FECHA</th><th>PROFESIONAL</th><th>SERVICIO / ÁREA</th><th>JORNADA</th></tr></thead><tbody>@forelse($schedules as $schedule)<tr><td>{{ $schedule->scheduled_date->format('d/m/Y') }}</td><td>{{ $schedule->professional->name }}</td><td>{{ $schedule->service->name }}{{ $schedule->area ? ' - '.$schedule->area->name : '' }}</td><td>{{ $schedule->shift->abbreviation ?: $schedule->shift->name }} ({{ $schedule->shift->starts_at?->format('H:i') }}–{{ $schedule->shift->ends_at?->format('H:i') }})</td></tr>@empty<tr><td colspan="4" class="portal-empty">No hay turnos programados.</td></tr>@endforelse</tbody></table></div>
+   <div class="portal-table"><table><thead><tr><th>FECHA</th><th>PROFESIONAL</th><th>SERVICIO / ÁREA</th><th>JORNADA</th></tr></thead><tbody>@forelse($schedules as $schedule)<tr><td>{{ $schedule->scheduled_date->format('d/m/Y') }}</td><td>{{ $schedule->trabajador?->persona?->full_name ?? 'Sin nombre' }}</td><td>{{ $schedule->service->name }}{{ $schedule->area ? ' - '.$schedule->area->name : '' }}</td><td>{{ $schedule->shift->abbreviation ?: $schedule->shift->name }} ({{ $schedule->shift->starts_at?->format('H:i') }}–{{ $schedule->shift->ends_at?->format('H:i') }})</td></tr>@empty<tr><td colspan="4" class="portal-empty">No hay turnos programados.</td></tr>@endforelse</tbody></table></div>
   </section>
   <div class="admin-heading catalog-heading"><div><h1>Catalogo de servicios</h1><span>Catalogo de solo lectura: se conserva el numero original, sin codigos SIG generados.</span></div></div>
   <section class="portal-panel">
@@ -49,5 +50,4 @@
   <div class="user-admin-list catalog-professionals">@foreach($professionals as $professional)<div class="user-admin-card"><div class="user-identity"><div class="avatar">{{ mb_strtoupper(mb_substr($professional->name,0,2,'UTF-8'),'UTF-8') }}</div><div><strong>{{ $professional->name }}</strong><small>{{ $professional->email }}</small></div></div><span>{{ $professional->service?->legacy_id }} - {{ $professional->service?->name }}</span><span>{{ $professional->active?'Activo':'Inactivo' }}</span></div>@endforeach</div>
  </main>
 </div>
-<script>document.addEventListener('DOMContentLoaded',()=>{const q=document.getElementById('serviceCatalogSearch'),cards=[...document.querySelectorAll('#serviceCatalog article')],empty=document.getElementById('serviceCatalogEmpty');const filter=()=>{const term=q.value.trim().toLocaleLowerCase('es');let visible=0;cards.forEach(card=>{const show=!term||card.dataset.serviceSearch.includes(term);card.hidden=!show;if(show)visible++});empty.hidden=visible!==0};q.addEventListener('input',filter)});</script>
 </body></html>

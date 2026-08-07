@@ -9,7 +9,7 @@ class ProfessionalSchedule extends Model
 {
     protected $guarded = [];
     protected function casts(): array { return ['scheduled_date' => 'date', 'active' => 'boolean']; }
-    public function professional(): BelongsTo { return $this->belongsTo(User::class, 'professional_id'); }
+    public function trabajador(): BelongsTo { return $this->belongsTo(Trabajador::class, 'trabajador_id', 'idTrabajador'); }
     public function shift(): BelongsTo { return $this->belongsTo(WorkShift::class, 'work_shift_id'); }
     public function service(): BelongsTo { return $this->belongsTo(Service::class); }
     public function area(): BelongsTo { return $this->belongsTo(ServiceArea::class, 'service_area_id'); }

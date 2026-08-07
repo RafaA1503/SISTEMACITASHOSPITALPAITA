@@ -21,7 +21,10 @@ return new class extends Migration {
 
         Schema::create('professional_schedules', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('professional_id')->constrained('users')->cascadeOnDelete(); // idTrabajador
+            // `trabajador_id` referencia trabajador.idTrabajador (tabla legacy real,
+            // con datos) sin FK dura por diferencia de tipos int/bigint — la
+            // integridad se valida en la capa de aplicación.
+            $table->unsignedInteger('trabajador_id');
             $table->foreignId('work_shift_id')->constrained()->restrictOnDelete(); // idJornada
             $table->foreignId('service_id')->constrained()->restrictOnDelete(); // idServicio
             $table->foreignId('service_area_id')->nullable()->constrained()->nullOnDelete(); // idArea
@@ -30,7 +33,7 @@ return new class extends Migration {
             $table->boolean('active')->default(true); // activo
             $table->text('notes')->nullable(); // observacion
             $table->timestamps();
-            $table->unique(['professional_id', 'work_shift_id', 'scheduled_date'], 'professional_schedule_shift_date_unique');
+            $table->unique(['trabajador_id', 'work_shift_id', 'scheduled_date'], 'professional_schedule_shift_date_unique');
             $table->index(['service_id', 'scheduled_date', 'active'], 'professional_schedule_service_date_active');
         });
     }

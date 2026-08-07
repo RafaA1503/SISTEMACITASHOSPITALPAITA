@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\CustomRole;
 use App\Models\Service;
+use App\Models\Trabajador;
 use App\Models\User;
+use App\Models\UserProfile;
+use App\Support\AuditLogger;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class RoleController extends Controller
 {
@@ -20,8 +22,10 @@ class RoleController extends Controller
         $this->admin($request);
 
         return view('auth.roles', [
-            'roles' => CustomRole::withCount('users')->orderBy('name')->get(),
-            'users' => User::with('customRole', 'service')->orderBy('name')->get(),
+            'roles' => CustomRole::withCount('profiles as users_count')->orderBy('name')->get(),
+            'users' => User::where('idSistema', User::sistemaId())
+                ->with(['persona', 'profile.customRole', 'trabajadorRecord'])
+                ->get()->sortBy('name')->values(),
             'services' => Service::where('active', true)->orderBy('name')->get(),
         ]);
     }
@@ -30,7 +34,8 @@ class RoleController extends Controller
     {
         $this->admin($request);
         $data = $this->validatedRole($request);
-        CustomRole::create($data + ['active' => true]);
+        $role = CustomRole::create($data + ['active' => true]);
+        AuditLogger::log($request, 'custom_role.created', 'CustomRole', $role->id, $data);
 
         return back()->with('success', 'Rol creado correctamente.');
     }
@@ -39,7 +44,9 @@ class RoleController extends Controller
     {
         $this->admin($request);
         $data = $this->validatedRole($request, $customRole);
+        $before = $customRole->only(['name', 'modules']);
         $customRole->update($data);
+        AuditLogger::log($request, 'custom_role.updated', 'CustomRole', $customRole->id, ['before' => $before, 'after' => $data]);
 
         return back()->with('success', 'Rol actualizado correctamente.');
     }
@@ -48,10 +55,11 @@ class RoleController extends Controller
     {
         $this->admin($request);
 
-        DB::transaction(function () use ($customRole) {
-            User::where('custom_role_id', $customRole->id)->update(['custom_role_id' => null]);
-            $customRole->delete();
-        });
+        $roleId = $customRole->id;
+        $roleName = $customRole->name;
+        UserProfile::where('custom_role_id', $customRole->id)->update(['custom_role_id' => null]);
+        $customRole->delete();
+        AuditLogger::log($request, 'custom_role.deleted', 'CustomRole', $roleId, ['name' => $roleName]);
 
         return back()->with('success', 'Rol eliminado. Los usuarios asociados vuelven a usar su rol base.');
     }
@@ -59,11 +67,23 @@ class RoleController extends Controller
     public function assign(Request $request, User $user)
     {
         $this->admin($request);
+        abort_unless($user->idSistema === User::sistemaId(), 404);
         $data = $request->validate([
             'custom_role_id' => 'nullable|exists:custom_roles,id',
             'service_id' => 'nullable|exists:services,id',
         ]);
-        $user->update($data);
+        $before = ['custom_role_id' => $user->resolvedCustomRole()?->id, 'service_id' => $user->service_id];
+
+        UserProfile::updateOrCreate(['user_id' => $user->id], ['custom_role_id' => $data['custom_role_id'] ?? null]);
+
+        if (! empty($data['service_id']) && $user->idPersona) {
+            $legacyServiceId = Service::find($data['service_id'])?->legacy_id;
+            if ($legacyServiceId) {
+                Trabajador::updateOrCreate(['idPersona' => $user->idPersona], ['idServicio' => $legacyServiceId, 'estado' => 1]);
+            }
+        }
+
+        AuditLogger::log($request, 'user.role_assigned', 'User', $user->id, ['before' => $before, 'after' => $data]);
 
         return back()->with('success', 'Rol y servicio asignados.');
     }

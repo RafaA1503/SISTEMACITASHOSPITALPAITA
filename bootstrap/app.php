@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['hospital_theme']);
         $middleware->prependToGroup('web', \App\Http\Middleware\ConfigurePasskeyOrigin::class);
         $middleware->appendToGroup('web', \App\Http\Middleware\ApplySavedTheme::class);
+        $middleware->appendToGroup('web', \App\Http\Middleware\SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

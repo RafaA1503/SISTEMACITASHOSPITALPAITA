@@ -14,13 +14,10 @@ return new class extends Migration {
             $table->boolean('active')->default(true);
             $table->timestamps();
         });
-        Schema::table('users', function (Blueprint $table) {
-            $table->foreignId('custom_role_id')->nullable()->after('role')->constrained('custom_roles')->nullOnDelete();
-        });
+        // `custom_role_id` vive en `user_profiles` (ver 2026_08_05_000002), no en `users`.
     }
     public function down(): void
     {
-        Schema::table('users', fn (Blueprint $table) => $table->dropConstrainedForeignId('custom_role_id'));
         Schema::dropIfExists('custom_roles');
     }
 };

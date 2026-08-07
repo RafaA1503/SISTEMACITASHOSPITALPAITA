@@ -6,6 +6,7 @@ use App\Http\Controllers\HospitalPortalController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\AdminCatalogController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\PasswordResetController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -20,6 +21,10 @@ Route::get('/', function () {
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'loginView'])->name('login');
     Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+    Route::get('/olvide-password', [PasswordResetController::class, 'forgotView'])->name('password.request');
+    Route::post('/olvide-password', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:5,1')->name('password.email');
+    Route::get('/restablecer-password/{token}', [PasswordResetController::class, 'resetView'])->name('password.reset');
+    Route::post('/restablecer-password', [PasswordResetController::class, 'reset'])->name('password.update.reset');
 });
 
 Route::middleware('auth')->group(function () {
