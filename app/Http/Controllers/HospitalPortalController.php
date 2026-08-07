@@ -86,6 +86,18 @@ class HospitalPortalController extends Controller
         return back()->with('success','Asistencia e ingreso confirmados. El paciente ya aparece en el panel profesional.');
     }
 
+    public function markNoShow(Request $request, Appointment $appointment)
+    {
+        abort_unless($request->user()->canAccessModule('portero'),403);
+        abort_unless($appointment->status==='programada',422,'Solo se puede marcar inasistencia en citas que aún no fueron confirmadas.');
+        DB::transaction(function()use($request,$appointment){
+            $from=$appointment->status;
+            $appointment->update(['status'=>'no_asistio']);
+            $this->recordStatus($request,$appointment,$from,'no_asistio','Paciente marcado como inasistencia por Portería.');
+        });
+        return back()->with('success','Se registró la inasistencia del paciente.');
+    }
+
     public function completeAppointment(Request $request, Appointment $appointment)
     {
         abort_unless($request->user()->canAccessModule('servicio'),403);

@@ -5,6 +5,7 @@ use App\Http\Controllers\DniLookupController;
 use App\Http\Controllers\HospitalPortalController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\AdminCatalogController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -50,7 +51,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
     Route::post('/citas/registrar', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
+    Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::put('/citas/{appointment}/atender', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
+    Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
     Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
     Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
     Route::put('/administracion/roles/{customRole}', [RoleController::class, 'update'])->name('admin.roles.update');

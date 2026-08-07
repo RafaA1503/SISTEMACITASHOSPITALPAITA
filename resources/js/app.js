@@ -147,6 +147,30 @@ const showModuleToast = (title = 'Acción completada', message = 'Los cambios se
     toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2800);
 };
 document.querySelectorAll('.moduleAction').forEach(btn => btn.addEventListener('click', () => btn.dataset.url ? window.location.href = btn.dataset.url : showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.')));
+
+const attendanceModal = document.getElementById('attendanceModal');
+if (attendanceModal) {
+    const attendanceTitle = document.getElementById('attendanceModalTitle');
+    const attendanceName = document.getElementById('attendanceModalName');
+    const attendanceSub = document.getElementById('attendanceModalSub');
+    const attendanceYes = document.getElementById('attendanceModalYes');
+    let pendingAttendanceForm = null;
+    const closeAttendanceModal = () => { attendanceModal.hidden = true; pendingAttendanceForm = null; };
+    document.querySelectorAll('[data-attendance-action]').forEach(button => button.addEventListener('click', () => {
+        pendingAttendanceForm = document.getElementById(button.dataset.formTarget);
+        const isNoShow = button.dataset.attendanceAction === 'no-asistio';
+        attendanceTitle.textContent = isNoShow ? '¿Confirma que el paciente no asistió?' : '¿Desea tomar asistencia?';
+        attendanceYes.textContent = isNoShow ? 'Sí, marcar falta' : 'Sí, confirmar';
+        attendanceYes.classList.toggle('danger', isNoShow);
+        attendanceName.textContent = button.dataset.patientName || '';
+        attendanceSub.textContent = button.dataset.patientMeta || '';
+        attendanceModal.hidden = false;
+    }));
+    attendanceYes.addEventListener('click', () => { pendingAttendanceForm?.requestSubmit(); closeAttendanceModal(); });
+    document.getElementById('attendanceModalNo')?.addEventListener('click', closeAttendanceModal);
+    document.getElementById('attendanceModalClose')?.addEventListener('click', closeAttendanceModal);
+    attendanceModal.addEventListener('click', event => { if (event.target === attendanceModal) closeAttendanceModal(); });
+}
 document.getElementById('patientButton')?.addEventListener('click', () => {
     document.getElementById('patientResult')?.classList.add('visible');
     showModuleToast('Paciente encontrado', 'Identidad y cita verificadas.');
