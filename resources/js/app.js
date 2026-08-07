@@ -10,7 +10,7 @@ pageLoader.id = 'pageLoader';
 pageLoader.className = 'page-loader visible';
 pageLoader.setAttribute('role', 'status');
 pageLoader.setAttribute('aria-live', 'polite');
-pageLoader.innerHTML = `<div class="loader-card"><div class="loader-logo"><img src="/logo-hospital-la-merced.png" alt=""></div><strong>Hospital La Merced Paita</strong><span>Cargando sistema...</span><i></i></div>`;
+pageLoader.innerHTML = `<div class="loader-card"><div class="loader-logo"><img src="/logo-hospital-la-merced.png" alt=""></div><strong>Hospital Nuestra Señora de las Mercedes</strong><span>Cargando sistema...</span><i></i></div>`;
 document.body.appendChild(pageLoader);
 const hideLoader = () => requestAnimationFrame(() => requestAnimationFrame(() => pageLoader.classList.remove('visible')));
 const showLoader = (message = 'Cargando sistema...') => {
@@ -436,7 +436,10 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
         result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join('')}</div><div><strong>${data.patient.name}</strong><p>DNI ${data.patient.dni} · Seguro ${data.patient.insurance||'No registrado'}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${data.appointments.map(a=>`<article><div class="appointment-date"><strong>${a.time}</strong><small>${a.date}</small></div><div><span>${a.service}</span><h3>${a.type}</h3><p>${a.location||'Ubicación por confirmar'}</p>${a.preparation?`<small class="prep">Preparación: ${a.preparation}</small>`:''}</div><b>${a.status}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>'}</div>`;
     }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
 });
-document.getElementById('portalDni')?.addEventListener('input', event => event.target.value = event.target.value.replace(/\D/g,'').slice(0,8));
+document.getElementById('portalDni')?.addEventListener('input', event => {
+    event.target.value = event.target.value.replace(/\D/g,'').slice(0,8);
+    if (event.target.value.length === 8) document.getElementById('portalSearch')?.click();
+});
 document.getElementById('portalDni')?.addEventListener('keydown', event => {
     if(event.key === 'Enter'){ event.preventDefault(); document.getElementById('portalSearch')?.click(); }
 });

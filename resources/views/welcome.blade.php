@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Control de acceso y citas para exámenes del Hospital La Merced Paita">
-    <title>Acceso Clínico | Hospital La Merced Paita</title>
+    <meta name="description" content="Control de acceso y citas para exámenes del Hospital Nuestra Señora de las Mercedes">
+    <title>Acceso Clínico | Hospital Nuestra Señora de las Mercedes</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
@@ -14,8 +14,8 @@
 <div class="app-shell">
     <aside class="sidebar" id="sidebar">
         <div class="brand">
-            <div class="brand-mark"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo del Hospital La Merced Paita"></div>
-            <div><strong>Hospital La Merced</strong><small>Paita · Piura</small></div>
+            <div class="brand-mark"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo del Hospital Nuestra Señora de las Mercedes"></div>
+            <div><strong>Hospital Nuestra Señora de las Mercedes</strong><small>Paita · Piura</small></div>
         </div>
         <nav aria-label="Navegación principal">
             <a class="nav-item active" href="{{ route('inicio') }}"><span class="nav-icon">⌂</span>Inicio</a>
@@ -45,7 +45,7 @@
     <main>
         <header class="topbar">
             <button class="menu-btn" id="menuBtn" aria-label="Abrir menú">☰</button>
-            <div class="mobile-brand"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt=""> La Merced Paita</div>
+            <div class="mobile-brand"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt=""> Hospital Nuestra Señora de las Mercedes</div>
             <div class="top-actions">
                 <span class="live"><i></i>Sistema operativo</span>
                 <button class="icon-btn" aria-label="Notificaciones">♢<em>2</em></button>
@@ -86,7 +86,7 @@
                 </div>
                 <div class="table-footer"><p>Mostrando <strong id="resultCount">6</strong> de 18 citas</p><div><button disabled>‹</button><button class="active">1</button><button>2</button><button>3</button><button>›</button></div></div>
             </section>
-            <footer><p>Hospital La Merced Paita · Control de acceso</p><p><span></span> Conexión segura · Datos actualizados en tiempo real</p></footer>
+            <footer><p>Hospital Nuestra Señora de las Mercedes · Control de acceso</p><p><span></span> Conexión segura · Datos actualizados en tiempo real</p></footer>
         </div>
     </main>
 </div>

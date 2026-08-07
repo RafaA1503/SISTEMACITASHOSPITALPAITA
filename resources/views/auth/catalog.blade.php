@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
- <title>Servicios y profesionales | Hospital La Merced</title>
+ <title>Servicios y profesionales | Hospital Nuestra Señora de las Mercedes</title>
  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
  @vite(['resources/css/app.css','resources/js/app.js'])
 </head>
@@ -46,7 +46,7 @@
    </div>
    <p id="serviceCatalogEmpty" hidden>No se encontraron servicios con ese filtro.</p>
   </section>
-  <div class="user-admin-list catalog-professionals">@foreach($professionals as $professional)<div class="user-admin-card"><div class="user-identity"><div class="avatar">{{ strtoupper(substr($professional->name,0,2)) }}</div><div><strong>{{ $professional->name }}</strong><small>{{ $professional->email }}</small></div></div><span>{{ $professional->service?->legacy_id }} - {{ $professional->service?->name }}</span><span>{{ $professional->active?'Activo':'Inactivo' }}</span></div>@endforeach</div>
+  <div class="user-admin-list catalog-professionals">@foreach($professionals as $professional)<div class="user-admin-card"><div class="user-identity"><div class="avatar">{{ mb_strtoupper(mb_substr($professional->name,0,2,'UTF-8'),'UTF-8') }}</div><div><strong>{{ $professional->name }}</strong><small>{{ $professional->email }}</small></div></div><span>{{ $professional->service?->legacy_id }} - {{ $professional->service?->name }}</span><span>{{ $professional->active?'Activo':'Inactivo' }}</span></div>@endforeach</div>
  </main>
 </div>
 <script>document.addEventListener('DOMContentLoaded',()=>{const q=document.getElementById('serviceCatalogSearch'),cards=[...document.querySelectorAll('#serviceCatalog article')],empty=document.getElementById('serviceCatalogEmpty');const filter=()=>{const term=q.value.trim().toLocaleLowerCase('es');let visible=0;cards.forEach(card=>{const show=!term||card.dataset.serviceSearch.includes(term);card.hidden=!show;if(show)visible++});empty.hidden=visible!==0};q.addEventListener('input',filter)});</script>

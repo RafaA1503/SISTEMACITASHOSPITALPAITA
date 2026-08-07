@@ -17,7 +17,7 @@
 </style>
 </head>
 <body>
-    <h1>Hospital La Merced Paita — Reporte de atención</h1>
+    <h1>Hospital Nuestra Señora de las Mercedes — Reporte de atención</h1>
     <p class="subtitle">Del {{ $from->format('d/m/Y') }} al {{ $to->format('d/m/Y') }} · Generado el {{ now()->format('d/m/Y H:i') }}</p>
 
     <table class="metrics">
@@ -54,6 +54,6 @@
         </tbody>
     </table>
 
-    <p class="footer">Hospital La Merced Paita · Sistema de gestión hospitalaria</p>
+    <p class="footer">Hospital Nuestra Señora de las Mercedes · Sistema de gestión hospitalaria</p>
 </body>
 </html>
