@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements PasskeyUser
 {
@@ -58,6 +59,7 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
     public function service(): BelongsTo { return $this->belongsTo(Service::class); }
+    public function schedules(): HasMany { return $this->hasMany(ProfessionalSchedule::class, 'professional_id'); }
     public function customRole(): BelongsTo { return $this->belongsTo(CustomRole::class); }
     public function canAccessModule(string $module): bool
     {

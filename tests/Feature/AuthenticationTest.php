@@ -3,7 +3,7 @@ namespace Tests\Feature;
 use App\Models\User; use Illuminate\Foundation\Testing\RefreshDatabase; use Tests\TestCase;
 use Illuminate\Http\UploadedFile; use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
-use App\Models\Appointment; use App\Models\AppointmentType; use App\Models\CustomRole; use App\Models\Service;
+use App\Models\Appointment; use App\Models\AppointmentType; use App\Models\CustomRole; use App\Models\Service; use App\Models\WorkShift;
 class AuthenticationTest extends TestCase {
  use RefreshDatabase;
  public function test_administrator_can_login_and_manage_users():void {
@@ -49,12 +49,30 @@ class AuthenticationTest extends TestCase {
   $this->actingAs($user)->get('/portal/citas')->assertOk();
   $this->actingAs($user)->get('/portal/portero')->assertForbidden();
  }
- public function test_admin_can_create_service_and_professional():void {
+ public function test_admin_can_edit_and_delete_a_custom_role():void {
+  $this->seed(); $admin=User::where('role','administrador')->firstOrFail(); $user=User::where('role','portero')->firstOrFail();
+  $role=CustomRole::create(['name'=>'Rol temporal','modules'=>['citas'],'active'=>true]); $user->update(['custom_role_id'=>$role->id]);
+  $this->actingAs($admin)->put('/administracion/roles/'.$role->id,['name'=>'Rol actualizado','modules'=>['portero','citas']])->assertSessionHas('success');
+  $this->assertDatabaseHas('custom_roles',['id'=>$role->id,'name'=>'Rol actualizado']);
+  $this->actingAs($admin)->delete('/administracion/roles/'.$role->id)->assertSessionHas('success');
+  $this->assertDatabaseMissing('custom_roles',['id'=>$role->id]);
+  $this->assertDatabaseHas('users',['id'=>$user->id,'custom_role_id'=>null]);
+ }
+ public function test_admin_assigns_professional_to_an_existing_service():void {
   $this->seed(); $admin=User::where('role','administrador')->firstOrFail();
-  $this->actingAs($admin)->post('/administracion/servicios',['name'=>'Cardiología','code'=>'CARD','location'=>'Consultorio 8'])->assertSessionHas('success');
-  $service=Service::where('code','CARD')->firstOrFail();
-  $this->actingAs($admin)->post('/administracion/profesionales',['name'=>'Dra. Cardiología','email'=>'cardio@hospital.test','password'=>'password123','service_id'=>$service->id])->assertSessionHas('success');
+  $service=Service::firstOrFail();
+  $this->actingAs($admin)->post('/administracion/servicios',['name'=>'Servicio no permitido'])->assertStatus(405);
+  $this->actingAs($admin)->post('/administracion/profesionales',['name'=>'Dra. Cardiologia','email'=>'cardio@hospital.test','password'=>'password123','service_id'=>$service->id])->assertSessionHas('success');
   $this->assertDatabaseHas('users',['email'=>'cardio@hospital.test','service_id'=>$service->id]);
+ }
+ public function test_professional_can_receive_an_appointment_for_a_scheduled_second_service():void {
+  $this->seed(); $admin=User::where('role','administrador')->firstOrFail(); $admission=User::where('role','admision')->firstOrFail();
+  $professional=User::where('role','profesional')->firstOrFail(); $service=Service::where('id','!=',$professional->service_id)->firstOrFail();
+  $type=AppointmentType::where('service_id',$service->id)->firstOrFail();
+  $shift=WorkShift::create(['legacy_id'=>99999,'name'=>'Turno de prueba','abbreviation'=>'TP','starts_at'=>'08:00:00','ends_at'=>'14:00:00','active'=>true]);
+  $this->actingAs($admin)->post('/administracion/programacion-profesionales',['professional_id'=>$professional->id,'service_id'=>$service->id,'work_shift_id'=>$shift->id,'scheduled_date'=>today()->format('Y-m-d')])->assertSessionHas('success');
+  $this->actingAs($admission)->post('/citas/registrar',['dni'=>'70001112','patient_name'=>'Paciente Programado','appointment_type_id'=>$type->id,'professional_id'=>$professional->id,'scheduled_at'=>today()->setTime(10,0)->format('Y-m-d H:i:s')])->assertSessionHas('success');
+  $this->assertDatabaseHas('appointments',['appointment_type_id'=>$type->id,'professional_id'=>$professional->id]);
  }
  public function test_professional_can_complete_confirmed_appointment_from_own_service():void {
   $this->seed(); $professional=User::where('role','profesional')->firstOrFail();

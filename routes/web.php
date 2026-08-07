@@ -53,8 +53,10 @@ Route::middleware('auth')->group(function () {
     Route::put('/citas/{appointment}/atender', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
     Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
     Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
+    Route::put('/administracion/roles/{customRole}', [RoleController::class, 'update'])->name('admin.roles.update');
+    Route::delete('/administracion/roles/{customRole}', [RoleController::class, 'destroy'])->name('admin.roles.destroy');
     Route::put('/administracion/roles/usuarios/{user}', [RoleController::class, 'assign'])->name('admin.roles.assign');
     Route::get('/administracion/servicios', [AdminCatalogController::class, 'index'])->name('admin.catalog');
-    Route::post('/administracion/servicios', [AdminCatalogController::class, 'storeService'])->name('admin.services.store');
     Route::post('/administracion/profesionales', [AdminCatalogController::class, 'storeProfessional'])->name('admin.professionals.store');
+    Route::post('/administracion/programacion-profesionales', [AdminCatalogController::class, 'storeSchedule'])->name('admin.professionals.schedule.store');
 });

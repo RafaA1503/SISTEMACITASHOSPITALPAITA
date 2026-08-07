@@ -9,6 +9,7 @@ use App\Models\ServiceArea;
 use App\Models\ServiceSubarea;
 use App\Models\ServiceType;
 use App\Models\Specialty;
+use App\Models\WorkShift;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -50,7 +51,10 @@ class ImportLegacyHospitalCatalog extends Command
                 $specialty = Specialty::where('legacy_id', $this->nullableInt($row[2] ?? null))->first();
                 $service = Service::updateOrCreate(['legacy_id' => (int) $row[0]], [
                     'name' => trim($row[1]),
-                    'code' => 'SIG-'.$row[0],
+                    // `legacy_id` conserva el IdServicio de la base fuente. El
+                    // código sólo satisface una restricción técnica del proyecto;
+                    // nunca se muestra ni sustituye al IdServicio.
+                    'code' => 'legacy-service-'.$row[0],
                     'specialty_id' => $specialty?->id,
                     'service_type_id' => ServiceType::where('legacy_id', $this->nullableInt($row[3] ?? null))->value('id'),
                     'category' => $this->category($specialty?->department_code, $this->nullableInt($row[3] ?? null), $row[1]),
@@ -58,7 +62,7 @@ class ImportLegacyHospitalCatalog extends Command
                     'report_enabled' => (bool) ($row[4] ?? false),
                     'notes' => $row[6] ?? null,
                 ]);
-                AppointmentType::updateOrCreate(['code' => 'SIG-A-'.$row[0]], [
+                AppointmentType::updateOrCreate(['code' => 'legacy-attention-'.$row[0]], [
                     'service_id' => $service->id,
                     'name' => 'Atención en '.$service->name,
                     'duration_minutes' => $service->specialty?->average_attention_minutes ?: 20,
@@ -82,6 +86,18 @@ class ImportLegacyHospitalCatalog extends Command
                 ServiceSubarea::updateOrCreate(['legacy_id' => (int) $row[0]], [
                     'service_area_id' => $areaId, 'name' => $row[2],
                     'food_access' => (bool) $row[3], 'active' => (bool) $row[4],
+                ]);
+            }
+
+            foreach ($this->rows($path, 'jornadaslaborales') as $row) {
+                $serviceId = Service::where('legacy_id', $this->nullableInt($row[2] ?? null))->value('id');
+                WorkShift::updateOrCreate(['legacy_id' => (int) $row[0]], [
+                    'service_id' => $serviceId,
+                    'name' => $row[3],
+                    'abbreviation' => $row[4] ?? null,
+                    'starts_at' => $row[5] ?? null,
+                    'ends_at' => $row[6] ?? null,
+                    'active' => (bool) ($row[8] ?? true),
                 ]);
             }
         });

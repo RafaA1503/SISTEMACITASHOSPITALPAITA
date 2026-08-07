@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\AppointmentType;
 use App\Models\Patient;
+use App\Models\ProfessionalSchedule;
 use App\Models\Service;
 use App\Models\ServiceArea;
 use App\Models\User;
@@ -26,12 +27,12 @@ class HospitalPortalController extends Controller
         $query=Appointment::with(['patient','type.service','professional','area','subarea'])->whereDate('scheduled_at',today())->orderBy('scheduled_at');
         if($role==='servicio') {
             $query->whereIn('status',['confirmada','ingreso','atendida']);
-            if($user->role!=='administrador') $query->whereHas('type',fn($q)=>$q->where('service_id',$user->service_id));
+            if($user->role!=='administrador') $query->where('professional_id',$user->id);
         }
         $today=$query->get();
         $services=Service::where('active',true)->with(['appointmentTypes'=>fn($q)=>$q->where('active',true)])->orderBy('name')->get();
         $areas=ServiceArea::where('active',true)->with(['service','subareas'=>fn($q)=>$q->where('active',true)->orderBy('name')])->orderBy('name')->get();
-        $professionals=User::where('active',true)->whereNotNull('service_id')->orderBy('name')->get();
+        $professionals=User::where('active',true)->whereIn('role',['profesional','laboratorio','imagenes'])->whereNotNull('service_id')->orderBy('name')->get();
         $metrics=['citas_hoy'=>Appointment::whereDate('scheduled_at',today())->count(),'confirmadas'=>Appointment::whereDate('scheduled_at',today())->where('status','confirmada')->count(),'ingresos'=>DB::table('access_logs')->whereDate('registered_at',today())->where('movement','ingreso')->count(),'pendientes'=>Appointment::whereDate('scheduled_at',today())->where('status','programada')->count()];
         return view('portal',compact('role','today','metrics','services','areas','professionals','user'));
     }
@@ -42,7 +43,18 @@ class HospitalPortalController extends Controller
         $data=$request->validate(['dni'=>'required|digits:8','patient_name'=>'required|string|max:200','first_names'=>'nullable|string|max:120','paternal_surname'=>'nullable|string|max:60','maternal_surname'=>'nullable|string|max:60','birth_date'=>'nullable|date|before_or_equal:today','sex'=>'nullable|in:M,F,O','phone'=>'nullable|string|max:20','address'=>'nullable|string|max:180','email'=>'nullable|email|max:120','medical_record_number'=>'nullable|string|max:30','insurance'=>'nullable|string|max:100','appointment_type_id'=>'required|exists:appointment_types,id','service_area_id'=>'nullable|exists:service_areas,id','service_subarea_id'=>'nullable|exists:service_subareas,id','professional_id'=>'nullable|exists:users,id','scheduled_at'=>'required|date','room'=>'nullable|string|max:100','notes'=>'nullable|string|max:500']);
         $type=AppointmentType::findOrFail($data['appointment_type_id']);
         if(!empty($data['service_area_id'])) abort_unless(ServiceArea::whereKey($data['service_area_id'])->where('service_id',$type->service_id)->exists(),422,'El área no pertenece al servicio seleccionado.');
-        if(!empty($data['professional_id'])) abort_unless(User::whereKey($data['professional_id'])->where('service_id',$type->service_id)->exists(),422,'El profesional no pertenece al servicio seleccionado.');
+        if(!empty($data['professional_id'])) abort_unless(User::whereKey($data['professional_id'])->whereIn('role',['profesional','laboratorio','imagenes'])->where('active', true)->exists(),422,'El profesional no está activo.');
+        if (! empty($data['professional_id'])) {
+            $scheduledAt = \Illuminate\Support\Carbon::parse($data['scheduled_at']);
+            $isScheduled = ProfessionalSchedule::where('professional_id', $data['professional_id'])
+                ->where('service_id', $type->service_id)
+                ->whereDate('scheduled_date', $scheduledAt->toDateString())
+                ->where('active', true)
+                ->where(fn ($query) => $query->whereNull('service_area_id')->orWhere('service_area_id', $data['service_area_id'] ?? null))
+                ->whereHas('shift', fn ($query) => $query->where('starts_at', '<=', $scheduledAt->format('H:i:s'))->where('ends_at', '>=', $scheduledAt->format('H:i:s')))
+                ->exists();
+            abort_unless($isScheduled, 422, 'El profesional no tiene un turno vigente para ese servicio, área, fecha y hora.');
+        }
         $identity=$this->patientIdentity($data);
         $patient=Patient::firstOrNew(['dni'=>$data['dni']]);
         $patient->fill(array_filter(array_merge($identity,['document_type'=>'DNI','birth_date'=>$data['birth_date']??null,'sex'=>$data['sex']??null,'phone'=>$data['phone']??null,'address'=>$data['address']??null,'email'=>$data['email']??null,'medical_record_number'=>$data['medical_record_number']??null,'insurance'=>$data['insurance']??null]),fn($value)=>$value!==null&&$value!==''));
@@ -77,7 +89,7 @@ class HospitalPortalController extends Controller
     public function completeAppointment(Request $request, Appointment $appointment)
     {
         abort_unless($request->user()->canAccessModule('servicio'),403);
-        if($request->user()->role!=='administrador') abort_unless($appointment->type()->where('service_id',$request->user()->service_id)->exists(),403);
+        if($request->user()->role!=='administrador') abort_unless($appointment->professional_id===$request->user()->id,403);
         abort_unless(in_array($appointment->status,['confirmada','ingreso'],true),422,'Portería debe confirmar primero la llegada del paciente.');
         DB::transaction(function()use($request,$appointment){$from=$appointment->status;$appointment->update(['status'=>'atendida','professional_id'=>$appointment->professional_id ?: $request->user()->id,'attention_started_at'=>$appointment->attention_started_at?:now(),'attention_completed_at'=>now()]);$this->recordStatus($request,$appointment,$from,'atendida','Atención confirmada por el profesional.');});
         return back()->with('success','Atención del paciente confirmada correctamente.');
