@@ -15,12 +15,15 @@
   <div class="account-grid">
    <section class="account-card">
     <h2>Crear servicio adicional</h2>
-    <p>Los servicios SIGESA ya están importados. Usa este formulario solo si el servicio no existe en la base anterior.</p>
+    <p>Registra únicamente los datos existentes en la estructura de servicios de la base hospitalaria.</p>
     <form method="POST" action="{{ route('admin.services.store') }}">@csrf
      <label>Nombre del servicio<input name="name" value="{{ old('name') }}" required placeholder="Ej. Cardiología"></label>
-     <label>Código local<input name="code" value="{{ old('code') }}" required placeholder="CARD"><small>No uses SIG-número: está reservado para el IdServicio importado.</small></label>
-     <label>Ubicación<input name="location" value="{{ old('location') }}" placeholder="Piso 1 · Consultorio 108"></label>
-     <button class="login-primary">Crear servicio local</button>
+     <label>Especialidad<select name="specialty_id"><option value="">Sin especialidad</option>@foreach($specialties as $specialty)<option value="{{ $specialty->id }}" @selected(old('specialty_id')==$specialty->id)>{{ $specialty->name }}</option>@endforeach</select></label>
+     <label>Tipo de servicio<select name="service_type_id"><option value="">Sin tipo asignado</option>@foreach($serviceTypes as $type)<option value="{{ $type->id }}" @selected(old('service_type_id')==$type->id)>{{ $type->name }}</option>@endforeach</select></label>
+     <label class="checkbox-field"><input type="hidden" name="report_enabled" value="0"><input type="checkbox" name="report_enabled" value="1" @checked(old('report_enabled'))> Es un servicio de reporte</label>
+     <label class="checkbox-field"><input type="hidden" name="active" value="0"><input type="checkbox" name="active" value="1" @checked(old('active','1'))> Servicio activo</label>
+     <label>Observación<textarea name="notes" rows="3" placeholder="Observación del servicio">{{ old('notes') }}</textarea></label>
+     <button class="login-primary">Crear servicio</button>
     </form>
    </section>
    <section class="account-card">
@@ -34,13 +37,13 @@
     </form>
    </section>
   </div>
-  <div class="admin-heading catalog-heading"><div><h1>Catálogo de servicios</h1><span>El código SIG corresponde al IdServicio de la base hospitalaria.</span></div></div>
+  <div class="admin-heading catalog-heading"><div><h1>Catálogo de servicios</h1><span>Los servicios importados conservan internamente su IdServicio original.</span></div></div>
   <section class="portal-panel">
    <div class="catalog-service-tools"><input id="serviceCatalogSearch" type="search" placeholder="Buscar por servicio, código, especialidad o tipo…"><select id="serviceCatalogSource"><option value="">Todos los orígenes</option><option value="sigesa">Importados de SIGESA</option><option value="local">Servicios locales</option></select></div>
    <div class="admin-services" id="serviceCatalog">
     @forelse($services as $service)
      <article data-service-search="{{ mb_strtolower($service->name.' '.$service->code.' '.($service->specialty?->name ?? '').' '.($service->type?->name ?? '')) }}" data-source="{{ $service->legacy_id ? 'sigesa' : 'local' }}">
-      <span>✚</span><div><h3>{{ $service->name }}</h3><p>{{ $service->specialty?->name ?? $service->type?->name ?? 'Servicio hospitalario' }} · {{ $service->areas_count }} área(s) · {{ $service->appointment_types_count }} atención(es)</p><small>{{ $service->legacy_id ? 'SIGESA · IdServicio '.$service->legacy_id : 'Creado localmente' }}</small></div><b>{{ $service->code }}</b>
+      <span>✚</span><div><h3>{{ $service->name }}</h3><p>{{ $service->specialty?->name ?? 'Sin especialidad' }} · {{ $service->type?->name ?? 'Sin tipo' }} · {{ $service->areas_count }} área(s)</p><small>{{ $service->active ? 'Activo' : 'Inactivo' }}{{ $service->report_enabled ? ' · Genera reporte' : '' }}</small></div><b>{{ $service->legacy_id ? 'ID '.$service->legacy_id : 'LOCAL' }}</b>
      </article>
     @empty<p>No hay servicios configurados.</p>@endforelse
    </div>

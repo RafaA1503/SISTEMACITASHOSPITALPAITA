@@ -34,6 +34,7 @@ class ImportLegacyHospitalCatalog extends Command
             foreach ($this->rows($path, 'especialidades') as $row) {
                 Specialty::updateOrCreate(['legacy_id' => (int) $row[0]], [
                     'name' => $row[1],
+                    'department_code' => $row[2] ?? null,
                     'average_attention_minutes' => $this->nullableInt($row[3] ?? null),
                     'minsa_code' => $row[4] ?? null,
                     'allows_referral' => (bool) ($row[5] ?? false),
@@ -46,12 +47,13 @@ class ImportLegacyHospitalCatalog extends Command
             }
 
             foreach ($this->rows($path, 'servicios') as $row) {
+                $specialty = Specialty::where('legacy_id', $this->nullableInt($row[2] ?? null))->first();
                 $service = Service::updateOrCreate(['legacy_id' => (int) $row[0]], [
                     'name' => trim($row[1]),
                     'code' => 'SIG-'.$row[0],
-                    'specialty_id' => Specialty::where('legacy_id', $this->nullableInt($row[2] ?? null))->value('id'),
+                    'specialty_id' => $specialty?->id,
                     'service_type_id' => ServiceType::where('legacy_id', $this->nullableInt($row[3] ?? null))->value('id'),
-                    'category' => $this->category($this->nullableInt($row[3] ?? null), $row[1]),
+                    'category' => $this->category($specialty?->department_code, $this->nullableInt($row[3] ?? null), $row[1]),
                     'active' => (int) ($row[5] ?? 1) === 1,
                     'report_enabled' => (bool) ($row[4] ?? false),
                     'notes' => $row[6] ?? null,
@@ -125,8 +127,13 @@ class ImportLegacyHospitalCatalog extends Command
     }
 
     private function nullableInt(mixed $value): ?int { return $value === null || $value === '' ? null : (int) $value; }
-    private function category(?int $type, string $name): string
+
+    private function category(?string $departmentCode, ?int $type, string $name): string
     {
+        // IdDepartamento de `especialidades`: 7 agrupa Laboratorio/Banco de Sangre/Patología Clínica,
+        // 9 agrupa Radiología/Ecografía/Tomografía/Resonancia. Es la clasificación real del respaldo.
+        if ($departmentCode === '7') return 'laboratorio';
+        if ($departmentCode === '9') return 'imagenes';
         $text = mb_strtolower($name);
         if (str_contains($text, 'laboratorio') || str_contains($text, 'sangre')) return 'laboratorio';
         if (str_contains($text, 'imagen') || str_contains($text, 'radiolog')) return 'imagenes';
