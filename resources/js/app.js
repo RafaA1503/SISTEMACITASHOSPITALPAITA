@@ -834,6 +834,15 @@ function bindAjaxForm(form) {
 }
 document.querySelectorAll('.ajax-form').forEach(bindAjaxForm);
 
+// Al marcar una acción, su módulo padre queda habilitado automáticamente.
+document.addEventListener('change', event => {
+    const action = event.target.closest('.module-actions input[type="checkbox"]');
+    if (action?.checked) {
+        const module = action.closest('.module-permission-card')?.querySelector('.module-toggle input[type="checkbox"]');
+        if (module) module.checked = true;
+    }
+});
+
 // --- Turnos de profesionales: el formulario de arriba sirve tanto para crear como editar ---
 const scheduleForm = document.getElementById('scheduleForm');
 if (scheduleForm) {

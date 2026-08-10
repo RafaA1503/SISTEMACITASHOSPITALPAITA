@@ -13,7 +13,7 @@ Route::get('/', function () {
         return redirect()->route('login');
     }
 
-    $module = auth()->user()->role === 'administrador' ? 'administrador' : 'portero';
+    $module = auth()->user()->defaultModule();
     return redirect()->route('portal', ['role' => $module]);
 })->name('inicio');
 
@@ -61,8 +61,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
     Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
     Route::post('/administracion/roles/usuarios', [RoleController::class, 'storeUser'])->name('admin.roles.users.store');
-    Route::put('/administracion/roles/{customRole}', [RoleController::class, 'update'])->name('admin.roles.update');
-    Route::delete('/administracion/roles/{customRole}', [RoleController::class, 'destroy'])->name('admin.roles.destroy');
+    Route::put('/administracion/roles/{role}', [RoleController::class, 'update'])->name('admin.roles.update');
+    Route::delete('/administracion/roles/{role}', [RoleController::class, 'destroy'])->name('admin.roles.destroy');
     Route::put('/administracion/roles/usuarios/{user}', [RoleController::class, 'assign'])->name('admin.roles.assign');
     Route::put('/administracion/roles/usuarios/{user}/estado', [RoleController::class, 'setUserStatus'])->name('admin.roles.users.status');
     Route::delete('/administracion/roles/usuarios/{user}', [RoleController::class, 'destroyUser'])->name('admin.roles.users.destroy');

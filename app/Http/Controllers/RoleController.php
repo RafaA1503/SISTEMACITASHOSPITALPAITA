@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CustomRole;
 use App\Models\Persona;
+use App\Models\Pagina;
 use App\Models\Rol;
 use App\Models\User;
 use App\Models\UserProfile;
@@ -12,6 +12,7 @@ use App\Support\LiveUpdate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
 {
@@ -23,12 +24,16 @@ class RoleController extends Controller
     public function index(Request $request)
     {
         $this->admin($request);
+        $systemId = User::sistemaId();
 
         return view('auth.roles', [
-            'roles' => CustomRole::withCount('profiles as users_count')->orderBy('name')->get(),
-            'users' => User::where('idSistema', User::sistemaId())
-                ->with(['persona', 'profile.customRole', 'trabajadorRecord'])
+            'roles' => $this->manualRoles($systemId)
+                ->withCount('users')->orderBy('nombreRol')->get(),
+            'assignableRoles' => $this->manualRoles($systemId)->orderBy('nombreRol')->get(),
+            'users' => User::where('idSistema', $systemId)
+                ->with(['persona', 'trabajadorRecord'])
                 ->get()->sortBy('name')->values(),
+            'pages' => Pagina::where('idSistema', $systemId)->where('estado', true)->with('acciones')->orderBy('nombre')->get(),
         ]);
     }
 
@@ -36,12 +41,18 @@ class RoleController extends Controller
     {
         $this->admin($request);
         $data = $this->validatedRole($request);
-        $role = CustomRole::create($data + ['active' => true]);
-        AuditLogger::log($request, 'custom_role.created', 'CustomRole', $role->id, $data);
+        $role = Rol::create([
+            'nombreRol' => $data['name'],
+            'descripcion' => 'Rol creado por administración de Control de Acceso de Pacientes',
+            'estado' => 1,
+            'idSistema' => User::sistemaId(),
+        ]);
+        $this->syncPermissions($role, $data);
+        AuditLogger::log($request, 'role.created', 'Rol', $role->idRol, $data);
 
         $role->users_count = 0;
         $html = view('auth.partials.role-card', ['item' => $role])->render();
-        if ($response = LiveUpdate::respond($request, 'admin.roles', '.role-list', 'created', $role->id, $html)) {
+        if ($response = LiveUpdate::respond($request, 'admin.roles', '.role-list', 'created', $role->idRol, $html)) {
             return $response;
         }
 
@@ -56,7 +67,7 @@ class RoleController extends Controller
             'email' => 'required|email|max:200',
             'username' => 'nullable|alpha_dash|max:20',
             'password' => 'required|string|min:8|confirmed',
-            'custom_role_id' => 'nullable|exists:custom_roles,id',
+            'custom_role_id' => 'required|exists:roles,idRol',
         ]);
 
         $systemId = User::sistemaId();
@@ -70,12 +81,10 @@ class RoleController extends Controller
         $nombres = array_shift($parts) ?: $data['name'];
         $apellidoPaterno = array_shift($parts);
         $apellidoMaterno = implode(' ', $parts) ?: null;
-        // El rol base es solo un punto de partida razonable (y ni siquiera se usa si
-        // el usuario tiene un rol personalizado activo, ver User::canAccessModule).
-        // Que falte "portero" en la tabla roles no debe bloquear crear una cuenta.
-        $baseRoleId = Rol::where('idSistema', $systemId)->where('nombreRol', 'portero')->value('idRol');
+        $roleId = (int) $data['custom_role_id'];
+        abort_unless($this->manualRoles($systemId)->whereKey($roleId)->exists(), 422, 'Selecciona un rol creado para este sistema.');
 
-        $user = DB::transaction(function () use ($data, $email, $username, $systemId, $baseRoleId, $nombres, $apellidoPaterno, $apellidoMaterno) {
+        $user = DB::transaction(function () use ($data, $email, $username, $systemId, $roleId, $nombres, $apellidoPaterno, $apellidoMaterno) {
             $documentType = DB::table('tiposdocidentidad')->orderBy('IdDocIdentidad')->value('IdDocIdentidad') ?: 1;
             $persona = Persona::create([
                 'nombres' => $nombres,
@@ -85,82 +94,84 @@ class RoleController extends Controller
                 'correoIntitucional' => $email,
                 'IdDocIdentidad' => $documentType,
             ]);
-            $user = User::create([
+
+            return User::create([
                 'correo' => $email,
                 'usuario' => $username,
                 'password' => $data['password'],
                 'idPersona' => $persona->idPersona,
-                'idRol' => $baseRoleId,
+                'idRol' => $roleId,
                 'idSistema' => $systemId,
                 'idTipoUsers' => 1,
                 'Estado' => true,
             ]);
-            UserProfile::updateOrCreate(['user_id' => $user->id], ['custom_role_id' => $data['custom_role_id'] ?? null]);
-            return $user;
         });
 
-        AuditLogger::log($request, 'user.created', 'User', $user->id, ['email' => $email, 'custom_role_id' => $data['custom_role_id'] ?? null]);
+        AuditLogger::log($request, 'user.created', 'User', $user->id, ['email' => $email, 'idRol' => $roleId]);
         $targets = [[
             'selector' => '#roleAssignmentsList',
             'action' => 'created',
             'id' => $user->id,
             'html' => view('auth.partials.role-assignment-row', [
-                'item' => $user->fresh(['persona', 'profile.customRole', 'trabajadorRecord']),
-                'roles' => CustomRole::orderBy('name')->get(),
+                'item' => $user->fresh(['persona', 'trabajadorRecord']),
+                'roles' => $this->manualRoles($systemId)->orderBy('nombreRol')->get(),
             ])->render(),
         ]];
-        // Si se asignó un rol personalizado al crear, su tarjeta en "Roles creados"
-        // queda con el contador de usuarios desactualizado hasta refrescar — se
-        // manda también su HTML actualizado para que se vea al instante.
-        if (! empty($data['custom_role_id'])) {
-            $customRole = CustomRole::withCount('profiles as users_count')->find($data['custom_role_id']);
-            if ($customRole) {
+        // Si el rol elegido es uno personalizado, su tarjeta en "Roles creados"
+        // queda con el contador desactualizado hasta refrescar — se manda también
+        // su HTML actualizado para que se vea al instante.
+        if ($roleId) {
+            $role = Rol::withCount('users')->find($roleId);
+            if ($role && $this->isManualRole($role)) {
                 $targets[] = [
                     'selector' => '.role-list',
                     'action' => 'updated',
-                    'id' => $customRole->id,
-                    'html' => view('auth.partials.role-card', ['item' => $customRole])->render(),
+                    'id' => $role->idRol,
+                    'html' => view('auth.partials.role-card', ['item' => $role])->render(),
                 ];
             }
         }
         if ($response = LiveUpdate::respondMulti($request, 'admin.roles', $targets)) {
             return $response;
         }
+
         return back()->with('success', 'Usuario creado y rol asignado correctamente.');
     }
 
-    public function update(Request $request, CustomRole $customRole)
+    public function update(Request $request, Rol $role)
     {
         $this->admin($request);
-        $data = $this->validatedRole($request, $customRole);
-        $before = $customRole->only(['name', 'modules']);
-        $customRole->update($data);
-        AuditLogger::log($request, 'custom_role.updated', 'CustomRole', $customRole->id, ['before' => $before, 'after' => $data]);
+        abort_unless($this->isManualRole($role), 403, 'Este rol no fue creado desde la administración del sistema.');
+        $data = $this->validatedRole($request, $role);
+        $before = ['name' => $role->nombreRol];
+        $role->update(['nombreRol' => $data['name']]);
+        $this->syncPermissions($role, $data);
+        AuditLogger::log($request, 'role.updated', 'Rol', $role->idRol, ['before' => $before, 'after' => $data]);
 
-        $customRole->loadCount('profiles as users_count');
-        $html = view('auth.partials.role-card', ['item' => $customRole])->render();
-        if ($response = LiveUpdate::respond($request, 'admin.roles', '.role-list', 'updated', $customRole->id, $html)) {
+        $role->loadCount('users');
+        $html = view('auth.partials.role-card', ['item' => $role])->render();
+        if ($response = LiveUpdate::respond($request, 'admin.roles', '.role-list', 'updated', $role->idRol, $html)) {
             return $response;
         }
 
         return back()->with('success', 'Rol actualizado correctamente.');
     }
 
-    public function destroy(Request $request, CustomRole $customRole)
+    public function destroy(Request $request, Rol $role)
     {
         $this->admin($request);
+        abort_unless($this->isManualRole($role), 403, 'Este rol no fue creado desde la administración del sistema.');
 
-        $roleId = $customRole->id;
-        $roleName = $customRole->name;
-        $affectedUsers = User::where('idSistema', User::sistemaId())
-            ->whereHas('profile', fn ($query) => $query->where('custom_role_id', $customRole->id))
-            ->with(['persona', 'profile.customRole', 'trabajadorRecord'])
-            ->get();
-        UserProfile::where('custom_role_id', $customRole->id)->update(['custom_role_id' => null]);
-        $customRole->delete();
-        AuditLogger::log($request, 'custom_role.deleted', 'CustomRole', $roleId, ['name' => $roleName]);
+        $systemId = User::sistemaId();
+        $roleId = $role->idRol;
+        $roleName = $role->nombreRol;
+        $affectedUsers = User::where('idSistema', $systemId)->where('idRol', $roleId)
+            ->with(['persona', 'trabajadorRecord'])->get();
+        User::where('idSistema', $systemId)->where('idRol', $roleId)->update(['idRol' => null]);
+        $role->delete();
+        AuditLogger::log($request, 'role.deleted', 'Rol', $roleId, ['name' => $roleName]);
 
-        $remainingRoles = CustomRole::orderBy('name')->get();
+        $remainingRoles = $this->manualRoles($systemId)->orderBy('nombreRol')->get();
         $targets = [['selector' => '.role-list', 'action' => 'deleted', 'id' => $roleId, 'html' => null]];
         foreach ($affectedUsers as $affectedUser) {
             $targets[] = [
@@ -168,7 +179,7 @@ class RoleController extends Controller
                 'action' => 'updated',
                 'id' => $affectedUser->id,
                 'html' => view('auth.partials.role-assignment-row', [
-                    'item' => $affectedUser->fresh(['persona', 'profile.customRole', 'trabajadorRecord']),
+                    'item' => $affectedUser->fresh(['persona', 'trabajadorRecord']),
                     'roles' => $remainingRoles,
                 ])->render(),
             ];
@@ -177,7 +188,7 @@ class RoleController extends Controller
             return $response;
         }
 
-        return back()->with('success', 'Rol eliminado. Los usuarios asociados vuelven a usar su rol base.');
+        return back()->with('success', 'Rol eliminado. Los usuarios asociados se quedan sin rol asignado.');
     }
 
     public function assign(Request $request, User $user)
@@ -185,11 +196,21 @@ class RoleController extends Controller
         $this->admin($request);
         abort_unless($user->idSistema === User::sistemaId(), 404);
         $data = $request->validate([
-            'custom_role_id' => 'nullable|exists:custom_roles,id',
+            'custom_role_id' => 'required|exists:roles,idRol',
         ]);
-        $before = ['custom_role_id' => $user->resolvedCustomRole()?->id];
+        $before = ['role_id' => $user->idRol];
+        $systemId = User::sistemaId();
+        $targetRole = $this->manualRoles($systemId)->with('paginas')->find($data['custom_role_id']);
+        abort_unless($targetRole, 422, 'Selecciona un rol creado para este sistema.');
 
-        UserProfile::updateOrCreate(['user_id' => $user->id], ['custom_role_id' => $data['custom_role_id'] ?? null]);
+        // Sin esto, un administrador se puede quitar su propio acceso de admin
+        // (ej. asignándose sin querer un rol personalizado) y quedar bloqueado
+        // fuera de esta misma pantalla, sin forma de revertirlo desde la UI.
+        if ($user->is($request->user())) {
+            abort_unless($targetRole->paginas->contains('descripcion', 'administracion'), 422, 'No puedes asignarte un rol sin acceso a Administración mientras estás conectado.');
+        }
+
+        $user->update(['idRol' => $data['custom_role_id']]);
 
         AuditLogger::log($request, 'user.role_assigned', 'User', $user->id, ['before' => $before, 'after' => $data]);
 
@@ -198,19 +219,21 @@ class RoleController extends Controller
             'action' => 'updated',
             'id' => $user->id,
             'html' => view('auth.partials.role-assignment-row', [
-                'item' => $user->fresh(['persona', 'profile.customRole', 'trabajadorRecord']),
-                'roles' => CustomRole::orderBy('name')->get(),
+                'item' => $user->fresh(['persona', 'trabajadorRecord']),
+                'roles' => $this->manualRoles($systemId)->orderBy('nombreRol')->get(),
             ])->render(),
         ]];
         // El rol anterior y el nuevo cambian su contador de usuarios asignados —
-        // se actualizan sus tarjetas en "Roles creados" para que no quede desfasado
-        // hasta refrescar la página.
-        $affectedRoleIds = array_filter(array_unique([$before['custom_role_id'], $data['custom_role_id'] ?? null]));
-        foreach (CustomRole::withCount('profiles as users_count')->whereIn('id', $affectedRoleIds)->get() as $affectedRole) {
+        // se actualizan sus tarjetas en "Roles creados" (si son personalizadas)
+        // para que no quede desfasado hasta refrescar la página.
+        $affectedRoleIds = array_filter(array_unique([$before['role_id'], $data['custom_role_id']]));
+        $affectedRoles = Rol::withCount('users')->whereIn('idRol', $affectedRoleIds)
+            ->get()->filter(fn (Rol $role) => $this->isManualRole($role));
+        foreach ($affectedRoles as $affectedRole) {
             $targets[] = [
                 'selector' => '.role-list',
                 'action' => 'updated',
-                'id' => $affectedRole->id,
+                'id' => $affectedRole->idRol,
                 'html' => view('auth.partials.role-card', ['item' => $affectedRole])->render(),
             ];
         }
@@ -232,8 +255,8 @@ class RoleController extends Controller
         AuditLogger::log($request, $active ? 'user.reactivated' : 'user.deactivated', 'User', $user->id, ['active' => $active]);
 
         $html = view('auth.partials.role-assignment-row', [
-            'item' => $user->fresh(['persona', 'profile.customRole', 'trabajadorRecord']),
-            'roles' => CustomRole::orderBy('name')->get(),
+            'item' => $user->fresh(['persona', 'trabajadorRecord']),
+            'roles' => $this->manualRoles(User::sistemaId())->orderBy('nombreRol')->get(),
         ])->render();
         if ($response = LiveUpdate::respond($request, 'admin.roles', '#roleAssignmentsList', 'updated', $user->id, $html)) {
             return $response;
@@ -248,9 +271,15 @@ class RoleController extends Controller
         abort_unless($user->idSistema === User::sistemaId(), 404);
         abort_if($user->is($request->user()), 422, 'No puedes eliminar tu propia cuenta mientras estás conectado.');
 
+        abort_if(
+            DB::table('access_logs')->where('registered_by', $user->id)->exists(),
+            422,
+            'Este usuario tiene movimientos de acceso registrados. Para conservar la trazabilidad, solo puede darse de baja.'
+        );
+
         $userId = $user->id;
         $userName = $user->name;
-        $customRoleId = $user->resolvedCustomRole()?->id;
+        $roleId = $user->idRol;
 
         // Solo se borra la cuenta de acceso (users/user_profiles) de este sistema.
         // La ficha de persona (Persona) no se toca: puede estar referenciada por
@@ -263,14 +292,14 @@ class RoleController extends Controller
         AuditLogger::log($request, 'user.deleted', 'User', $userId, ['name' => $userName]);
 
         $targets = [['selector' => '#roleAssignmentsList', 'action' => 'deleted', 'id' => $userId, 'html' => null]];
-        if ($customRoleId) {
-            $customRole = CustomRole::withCount('profiles as users_count')->find($customRoleId);
-            if ($customRole) {
+        if ($roleId) {
+            $role = Rol::withCount('users')->find($roleId);
+            if ($role && $this->isManualRole($role)) {
                 $targets[] = [
                     'selector' => '.role-list',
                     'action' => 'updated',
-                    'id' => $customRole->id,
-                    'html' => view('auth.partials.role-card', ['item' => $customRole])->render(),
+                    'id' => $role->idRol,
+                    'html' => view('auth.partials.role-card', ['item' => $role])->render(),
                 ];
             }
         }
@@ -281,12 +310,46 @@ class RoleController extends Controller
         return back()->with('success', 'Usuario eliminado permanentemente.');
     }
 
-    private function validatedRole(Request $request, ?CustomRole $role = null): array
+    private function validatedRole(Request $request, ?Rol $role = null): array
     {
+        $systemId = User::sistemaId();
+
         return $request->validate([
-            'name' => ['required', 'string', 'max:80', 'unique:custom_roles,name'.($role ? ','.$role->id : '')],
-            'modules' => 'required|array|min:1',
-            'modules.*' => 'in:portero,administrador',
+            'name' => [
+                'required', 'string', 'max:80',
+                Rule::unique('roles', 'nombreRol')->where(fn ($q) => $q->where('idSistema', $systemId))->ignore($role?->idRol, 'idRol'),
+            ],
+            'page_ids' => 'nullable|array',
+            'page_ids.*' => 'integer|exists:paginas,idPagina',
+            'action_ids' => 'nullable|array',
+            'action_ids.*' => 'integer|exists:acciones,idAccion',
         ]);
+    }
+
+    private function syncPermissions(Rol $role, array $data): void
+    {
+        $pageIds = array_values(array_unique($data['page_ids'] ?? []));
+        $actionIds = array_values(array_unique($data['action_ids'] ?? []));
+        if ($actionIds) {
+            $pageIds = array_values(array_unique(array_merge($pageIds, DB::table('acciones')->whereIn('idAccion', $actionIds)->pluck('idPagina')->all())));
+        }
+        DB::transaction(function () use ($role, $pageIds, $actionIds): void {
+            DB::table('accesos')->where('idRol', $role->idRol)->delete();
+            DB::table('accesosacciones')->where('idRol', $role->idRol)->delete();
+            foreach ($pageIds as $pageId) DB::table('accesos')->insert(['idRol'=>$role->idRol,'idPagina'=>$pageId,'Estado'=>1]);
+            foreach ($actionIds as $actionId) DB::table('accesosacciones')->insert(['idRol'=>$role->idRol,'idAccion'=>$actionId,'Estado'=>1,'FechaActualizado'=>now()]);
+        });
+    }
+
+    private function manualRoles(int $systemId)
+    {
+        return Rol::query()
+            ->where('idSistema', $systemId)
+            ->where('descripcion', 'like', 'Rol creado por administración de Control de Acceso de Pacientes%');
+    }
+
+    private function isManualRole(Rol $role): bool
+    {
+        return str_starts_with((string) $role->descripcion, 'Rol creado por administración de Control de Acceso de Pacientes');
     }
 }

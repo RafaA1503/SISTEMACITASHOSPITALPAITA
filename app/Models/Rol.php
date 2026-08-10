@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Rol extends Model
 {
@@ -21,6 +22,8 @@ class Rol extends Model
     {
         return $this->hasMany(User::class, 'idRol', 'idRol');
     }
+    public function paginas(): BelongsToMany { return $this->belongsToMany(Pagina::class,'accesos','idRol','idPagina','idRol','idPagina')->wherePivot('Estado',true); }
+    public function acciones(): BelongsToMany { return $this->belongsToMany(Accion::class,'accesosacciones','idRol','idAccion','idRol','idAccion')->wherePivot('Estado',true); }
 
     // Alias para que las vistas compartidas con el antiguo modelo CustomRole
     // (que usaba id/name) sigan funcionando sin cambiar cada plantilla.

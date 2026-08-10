@@ -81,15 +81,6 @@ class User extends Authenticatable implements PasskeyUser
         return ProfessionalSchedule::where('trabajador_id', $this->trabajadorRecord?->idTrabajador ?? 0);
     }
 
-    // Nombre distinto a una relación real a propósito: si Eloquent detecta un
-    // método llamado igual que un atributo mágico, exige que devuelva una
-    // Relation. `$user->customRole` (acceso mágico) rompería; se debe llamar
-    // como método: `$user->resolvedCustomRole()`.
-    public function resolvedCustomRole(): ?CustomRole
-    {
-        return $this->profile?->customRole;
-    }
-
     // --- Accessors que mantienen los nombres de atributo que ya usa el resto de la app ---
 
     public function getNameAttribute(): string
@@ -144,33 +135,14 @@ class User extends Authenticatable implements PasskeyUser
 
     public function canAccessModule(string $module): bool
     {
-        if ($this->role === 'administrador') return true;
-        $customRole = $this->resolvedCustomRole();
-        if ($customRole?->active) return in_array($module, $customRole->modules ?? [], true);
-
-        return match ($this->role) {
-            'portero' => $module === 'portero',
-            'admision' => $module === 'portero',
-            'administrador' => true,
-            default => $module === 'portero',
-        };
+        $page = ['portero' => 'control_acceso', 'administrador' => 'administracion'][$module] ?? null;
+        if (! $page || ! $this->rol) return false;
+        return $this->rol->paginas()->where('paginas.descripcion', $page)->exists();
     }
 
-    /** Módulo al que debe entrar el usuario tras iniciar sesión, respetando su rol personalizado si tiene uno. */
+    /** Módulo al que debe entrar el usuario tras iniciar sesión. */
     public function defaultModule(): string
     {
-        $customRole = $this->resolvedCustomRole();
-        if ($customRole?->active && ! empty($customRole->modules)) {
-            foreach (['portero', 'administrador'] as $candidate) {
-                if (in_array($candidate, $customRole->modules, true)) return $candidate;
-            }
-        }
-
-        return match ($this->role) {
-            'portero' => 'portero',
-            'admision' => 'portero',
-            'administrador' => 'administrador',
-            default => 'portero',
-        };
+        return $this->canAccessModule('administrador') ? 'administrador' : 'portero';
     }
 }

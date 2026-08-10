@@ -12,8 +12,6 @@ return new class extends Migration
 {
     private const SISTEMA_NOMBRE = 'ControlAccesoPacientes';
 
-    private const ROLES = ['portero', 'admision', 'profesional', 'laboratorio', 'imagenes', 'administrador'];
-
     public function up(): void
     {
         $sistemaId = DB::table('sistemas')->where('nombre', self::SISTEMA_NOMBRE)->value('idSistema');
@@ -25,17 +23,6 @@ return new class extends Migration
             ], 'idSistema');
         }
 
-        foreach (self::ROLES as $rol) {
-            $exists = DB::table('roles')->where('nombreRol', $rol)->where('idSistema', $sistemaId)->exists();
-            if (! $exists) {
-                DB::table('roles')->insert([
-                    'nombreRol' => $rol,
-                    'descripcion' => "Rol {$rol} del sistema de control de acceso de pacientes",
-                    'estado' => 1,
-                    'idSistema' => $sistemaId,
-                ]);
-            }
-        }
     }
 
     public function down(): void
