@@ -4,7 +4,6 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DniLookupController;
 use App\Http\Controllers\HospitalPortalController;
 use App\Http\Controllers\RoleController;
-use App\Http\Controllers\AdminCatalogController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\PasswordResetController;
 use Illuminate\Support\Facades\Route;
@@ -14,7 +13,7 @@ Route::get('/', function () {
         return redirect()->route('login');
     }
 
-    $module = match(auth()->user()->role){'portero'=>'portero','admision'=>'citas','administrador'=>'administrador',default=>'servicio'};
+    $module = auth()->user()->role === 'administrador' ? 'administrador' : 'portero';
     return redirect()->route('portal', ['role' => $module]);
 })->name('inicio');
 
@@ -31,7 +30,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('/portal/{role?}', [HospitalPortalController::class, 'index'])->name('portal');
 
-    Route::view('/citas', 'modules', ['module' => 'citas'])->name('citas');
     Route::view('/pacientes', 'modules', ['module' => 'pacientes'])->name('pacientes');
     Route::view('/control-acceso', 'modules', ['module' => 'accesos'])->name('accesos');
     Route::view('/historial', 'modules', ['module' => 'historial'])->name('historial');
@@ -54,20 +52,18 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('dni')
         ->name('patients.appointments');
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
-    Route::post('/citas/registrar', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
     Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
-    Route::put('/citas/{appointment}/atender', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
     Route::get('/administracion/reportes/excel', [ReportController::class, 'exportExcel'])->name('admin.reports.excel');
     Route::get('/administracion/reportes/pdf', [ReportController::class, 'exportPdf'])->name('admin.reports.pdf');
     Route::get('/administracion/roles', [RoleController::class, 'index'])->name('admin.roles');
     Route::post('/administracion/roles', [RoleController::class, 'store'])->name('admin.roles.store');
+    Route::post('/administracion/roles/usuarios', [RoleController::class, 'storeUser'])->name('admin.roles.users.store');
     Route::put('/administracion/roles/{customRole}', [RoleController::class, 'update'])->name('admin.roles.update');
     Route::delete('/administracion/roles/{customRole}', [RoleController::class, 'destroy'])->name('admin.roles.destroy');
     Route::put('/administracion/roles/usuarios/{user}', [RoleController::class, 'assign'])->name('admin.roles.assign');
-    Route::get('/administracion/servicios', [AdminCatalogController::class, 'index'])->name('admin.catalog');
-    Route::post('/administracion/profesionales', [AdminCatalogController::class, 'storeProfessional'])->name('admin.professionals.store');
-    Route::post('/administracion/programacion-profesionales', [AdminCatalogController::class, 'storeSchedule'])->name('admin.professionals.schedule.store');
+    Route::put('/administracion/roles/usuarios/{user}/estado', [RoleController::class, 'setUserStatus'])->name('admin.roles.users.status');
+    Route::delete('/administracion/roles/usuarios/{user}', [RoleController::class, 'destroyUser'])->name('admin.roles.users.destroy');
 });

@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Support\AuditLogger;
+use App\Support\LiveUpdate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -44,9 +45,7 @@ class AuthController extends Controller
         }
         $request->session()->regenerate();
 
-        $module = match ($request->user()->role) {'portero' => 'portero', 'admision' => 'citas', 'administrador' => 'administrador', default => 'servicio'};
-
-        return redirect()->route('portal', $module);
+        return redirect()->route('portal', $request->user()->defaultModule());
     }
 
     public function logout(Request $request) { Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken(); return redirect()->route('login'); }
@@ -124,6 +123,14 @@ class AuthController extends Controller
         UserProfile::updateOrCreate(['user_id' => $user->id], ['permissions' => $data['permissions'] ?? []]);
 
         AuditLogger::log($request, 'user.updated', 'User', $user->id, ['before' => $before, 'after' => $data]);
+
+        $html = view('auth.partials.user-card', [
+            'item' => $user->fresh(['persona', 'rol', 'profile']),
+            'services' => Service::where('active', 1)->get(),
+        ])->render();
+        if ($response = LiveUpdate::respond($request, 'admin.users', '#usersList', 'updated', $user->id, $html)) {
+            return $response;
+        }
 
         return back()->with('success', 'Rol y funciones actualizados.');
     }

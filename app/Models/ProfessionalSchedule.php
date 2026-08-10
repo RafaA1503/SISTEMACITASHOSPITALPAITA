@@ -14,4 +14,11 @@ class ProfessionalSchedule extends Model
     public function service(): BelongsTo { return $this->belongsTo(Service::class); }
     public function area(): BelongsTo { return $this->belongsTo(ServiceArea::class, 'service_area_id'); }
     public function subarea(): BelongsTo { return $this->belongsTo(ServiceSubarea::class, 'service_subarea_id'); }
+
+    public function getProfessionalAttribute(): ?User
+    {
+        $idPersona = $this->trabajador?->idPersona;
+
+        return $idPersona ? User::where('idPersona', $idPersona)->where('idSistema', User::sistemaId())->first() : null;
+    }
 }

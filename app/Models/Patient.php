@@ -84,8 +84,8 @@ class Patient extends Model
     public function getMotherNameAttribute(): ?string { return $this->NombreMadre; }
     public function setMotherNameAttribute($value): void { $this->attributes['NombreMadre'] = $value; }
 
-    public function getMedicalRecordNumberAttribute(): ?string { return $this->NroHistoriaClinica; }
-    public function setMedicalRecordNumberAttribute($value): void { $this->attributes['NroHistoriaClinica'] = $value; }
+    public function getMedicalRecordNumberAttribute(): ?string { return $this->historia_clinica_note; }
+    public function setMedicalRecordNumberAttribute($value): void { $this->attributes['historia_clinica_note'] = $value; }
 
     public function getInsuranceAttribute(): ?string { return $this->insurance_note; }
     public function setInsuranceAttribute($value): void { $this->attributes['insurance_note'] = $value; }

@@ -11,6 +11,7 @@ use App\Models\Trabajador;
 use App\Models\User;
 use App\Models\WorkShift;
 use App\Support\AuditLogger;
+use App\Support\LiveUpdate;
 use Illuminate\Http\Request;
 
 class AdminCatalogController extends Controller
@@ -70,12 +71,16 @@ class AdminCatalogController extends Controller
         ]);
         AuditLogger::log($request, 'professional.created', 'User', $professional->id, ['service_id' => $data['service_id'], 'trabajador_id' => $trabajador->idTrabajador]);
 
+        $html = view('auth.partials.professional-card', ['professional' => $professional])->render();
+        if ($response = LiveUpdate::respond($request, 'admin.professionals', '#professionalsList', 'created', $professional->id, $html)) {
+            return $response;
+        }
+
         return back()->with('success', 'Profesional creado y asignado al servicio.');
     }
 
-    public function storeSchedule(Request $request)
+    private function validateSchedule(Request $request): array
     {
-        $this->admin($request);
         $data = $request->validate([
             'professional_id' => 'required|exists:users,id',
             'service_id' => 'required|exists:services,id',
@@ -87,21 +92,42 @@ class AdminCatalogController extends Controller
 
         $professional = User::find($data['professional_id']);
         if (! $professional || ! $professional->active) {
-            return back()->withInput()->withErrors('El profesional no está activo.');
+            throw new \RuntimeException('El profesional no está activo.');
         }
         $trabajadorId = $professional->trabajadorRecord?->idTrabajador;
         if (! $trabajadorId) {
-            return back()->withInput()->withErrors('El profesional no tiene un registro de trabajador vinculado.');
+            throw new \RuntimeException('El profesional no tiene un registro de trabajador vinculado.');
         }
         if (! WorkShift::whereKey($data['work_shift_id'])->where(fn ($query) => $query->whereNull('service_id')->orWhere('service_id', $data['service_id']))->exists()) {
-            return back()->withInput()->withErrors('La jornada no corresponde al servicio.');
+            throw new \RuntimeException('La jornada no corresponde al servicio.');
         }
         if (! empty($data['service_area_id']) && ! ServiceArea::whereKey($data['service_area_id'])->where('service_id', $data['service_id'])->exists()) {
-            return back()->withInput()->withErrors('El área no pertenece al servicio.');
+            throw new \RuntimeException('El área no pertenece al servicio.');
+        }
+
+        $data['trabajador_id'] = $trabajadorId;
+
+        return $data;
+    }
+
+    private function scheduleError(Request $request, \RuntimeException $e)
+    {
+        return $request->wantsJson()
+            ? response()->json(['message' => $e->getMessage()], 422)
+            : back()->withInput()->withErrors($e->getMessage());
+    }
+
+    public function storeSchedule(Request $request)
+    {
+        $this->admin($request);
+        try {
+            $data = $this->validateSchedule($request);
+        } catch (\RuntimeException $e) {
+            return $this->scheduleError($request, $e);
         }
 
         $schedule = ProfessionalSchedule::updateOrCreate([
-            'trabajador_id' => $trabajadorId,
+            'trabajador_id' => $data['trabajador_id'],
             'work_shift_id' => $data['work_shift_id'],
             'scheduled_date' => $data['scheduled_date'],
         ], [
@@ -112,6 +138,53 @@ class AdminCatalogController extends Controller
         ]);
         AuditLogger::log($request, 'professional_schedule.created', 'ProfessionalSchedule', $schedule->id, $data);
 
+        $html = view('auth.partials.schedule-row', ['schedule' => $schedule->load(['trabajador.persona', 'service', 'area', 'shift'])])->render();
+        if ($response = LiveUpdate::respond($request, 'admin.schedules', '#schedulesTableBody', 'created', $schedule->id, $html)) {
+            return $response;
+        }
+
         return back()->with('success', 'Turno profesional registrado. Ya puede recibir citas de ese servicio en la fecha programada.');
+    }
+
+    public function updateSchedule(Request $request, ProfessionalSchedule $schedule)
+    {
+        $this->admin($request);
+        try {
+            $data = $this->validateSchedule($request);
+        } catch (\RuntimeException $e) {
+            return $this->scheduleError($request, $e);
+        }
+
+        $before = $schedule->only(['trabajador_id', 'service_id', 'service_area_id', 'work_shift_id', 'scheduled_date', 'notes']);
+        $schedule->update([
+            'trabajador_id' => $data['trabajador_id'],
+            'service_id' => $data['service_id'],
+            'service_area_id' => $data['service_area_id'] ?? null,
+            'work_shift_id' => $data['work_shift_id'],
+            'scheduled_date' => $data['scheduled_date'],
+            'notes' => $data['notes'] ?? null,
+        ]);
+        AuditLogger::log($request, 'professional_schedule.updated', 'ProfessionalSchedule', $schedule->id, ['before' => $before, 'after' => $data]);
+
+        $html = view('auth.partials.schedule-row', ['schedule' => $schedule->fresh(['trabajador.persona', 'service', 'area', 'shift'])])->render();
+        if ($response = LiveUpdate::respond($request, 'admin.schedules', '#schedulesTableBody', 'updated', $schedule->id, $html)) {
+            return $response;
+        }
+
+        return back()->with('success', 'Turno actualizado correctamente.');
+    }
+
+    public function destroySchedule(Request $request, ProfessionalSchedule $schedule)
+    {
+        $this->admin($request);
+        $scheduleId = $schedule->id;
+        AuditLogger::log($request, 'professional_schedule.deleted', 'ProfessionalSchedule', $scheduleId, $schedule->only(['trabajador_id', 'service_id', 'scheduled_date']));
+        $schedule->delete();
+
+        if ($response = LiveUpdate::respond($request, 'admin.schedules', '#schedulesTableBody', 'deleted', $scheduleId, null)) {
+            return $response;
+        }
+
+        return back()->with('success', 'Turno eliminado.');
     }
 }

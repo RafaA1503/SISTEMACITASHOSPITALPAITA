@@ -2,6 +2,129 @@ import './bootstrap';
 import { Passkeys } from '@laravel/passkeys';
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+const normalizeSearch = value => String(value ?? '').toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// Convierte un <select> con muchas opciones en un combo con buscador, sin tocar
+// el <select> original (sigue enviándose igual en el formulario y respeta
+// required/validación nativa; solo se oculta visualmente).
+function enhanceSelect(select) {
+    if (select.dataset.comboEnhanced || select.multiple || select.options.length < 8) return;
+    select.dataset.comboEnhanced = '1';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'combo-select';
+    select.insertAdjacentElement('beforebegin', wrapper);
+    wrapper.appendChild(select);
+    select.classList.add('combo-native-select');
+    select.tabIndex = -1;
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'combo-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.innerHTML = '<span></span><i>⌄</i>';
+    wrapper.appendChild(trigger);
+
+    const panel = document.createElement('div');
+    panel.className = 'combo-panel';
+    panel.hidden = true;
+    panel.innerHTML = '<input type="text" class="combo-search" placeholder="Buscar..." autocomplete="off"><div class="combo-options" role="listbox"></div><p class="combo-empty" hidden>Sin resultados</p>';
+    wrapper.appendChild(panel);
+
+    const searchInput = panel.querySelector('.combo-search');
+    const optionsContainer = panel.querySelector('.combo-options');
+    const emptyMsg = panel.querySelector('.combo-empty');
+    const label = trigger.querySelector('span');
+
+    let renderedItems = [];
+    let highlightedIndex = -1;
+
+    const updateLabel = () => {
+        const current = select.options[select.selectedIndex];
+        const hasValue = current && current.value !== '';
+        label.textContent = current ? current.textContent.trim() : 'Seleccionar';
+        label.classList.toggle('placeholder', !hasValue);
+    };
+
+    const buildList = (term = '') => {
+        optionsContainer.innerHTML = '';
+        renderedItems = [];
+        highlightedIndex = -1;
+        const normalizedTerm = normalizeSearch(term.trim());
+        let lastGroup = null;
+        [...select.options].forEach((option, index) => {
+            if (option.hidden) return;
+            const text = option.textContent.trim();
+            if (normalizedTerm && !normalizeSearch(text).includes(normalizedTerm)) return;
+            const groupLabel = option.closest('optgroup')?.label || null;
+            if (groupLabel !== lastGroup) {
+                lastGroup = groupLabel;
+                if (groupLabel) {
+                    const groupEl = document.createElement('div');
+                    groupEl.className = 'combo-group-label';
+                    groupEl.textContent = groupLabel;
+                    optionsContainer.appendChild(groupEl);
+                }
+            }
+            const item = document.createElement('div');
+            item.className = 'combo-option' + (index === select.selectedIndex ? ' selected' : '');
+            item.setAttribute('role', 'option');
+            item.textContent = text || ' ';
+            item.addEventListener('click', () => selectIndex(index));
+            optionsContainer.appendChild(item);
+            renderedItems.push({ el: item, index });
+        });
+        emptyMsg.hidden = renderedItems.length > 0;
+    };
+
+    const selectIndex = index => {
+        select.selectedIndex = index;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        closePanel();
+        trigger.focus();
+    };
+
+    const onDocumentClick = event => { if (!wrapper.contains(event.target)) closePanel(); };
+    const openPanel = () => {
+        panel.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        searchInput.value = '';
+        buildList();
+        searchInput.focus();
+        document.addEventListener('click', onDocumentClick, true);
+    };
+    const closePanel = () => {
+        panel.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('click', onDocumentClick, true);
+    };
+    const moveHighlight = delta => {
+        if (!renderedItems.length) return;
+        renderedItems[highlightedIndex]?.el.classList.remove('active');
+        highlightedIndex = (highlightedIndex + delta + renderedItems.length) % renderedItems.length;
+        const item = renderedItems[highlightedIndex];
+        item.el.classList.add('active');
+        item.el.scrollIntoView({ block: 'nearest' });
+    };
+
+    trigger.addEventListener('click', () => (panel.hidden ? openPanel() : closePanel()));
+    searchInput.addEventListener('input', () => buildList(searchInput.value));
+    searchInput.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { closePanel(); trigger.focus(); }
+        else if (event.key === 'ArrowDown') { event.preventDefault(); moveHighlight(1); }
+        else if (event.key === 'ArrowUp') { event.preventDefault(); moveHighlight(-1); }
+        else if (event.key === 'Enter') {
+            event.preventDefault();
+            const target = highlightedIndex >= 0 ? renderedItems[highlightedIndex] : (renderedItems.length === 1 ? renderedItems[0] : null);
+            if (target) selectIndex(target.index);
+        }
+    });
+
+    select.addEventListener('change', updateLabel);
+    updateLabel();
+}
+document.querySelectorAll('select').forEach(enhanceSelect);
 
 const serviceCatalogSearch = document.getElementById('serviceCatalogSearch');
 if (serviceCatalogSearch) {
@@ -50,6 +173,7 @@ document.addEventListener('click', event => {
 });
 document.addEventListener('submit', event => {
     if (event.defaultPrevented || !event.target.checkValidity()) return;
+    if (event.target.matches('.ajax-form')) return;
     showLoader(event.target.closest('.login-card') ? 'Iniciando sesión segura...' : 'Guardando cambios...');
 });
 
@@ -251,6 +375,29 @@ accessForm?.addEventListener('submit', e => {
     accessForm.reset(); document.getElementById('identifiedPerson').hidden = true; registerAccess.disabled = true;
 });
 
+// El área/destino debe pertenecer al mismo servicio que la atención elegida,
+// si no el backend rechaza la cita con "El área no pertenece al servicio seleccionado."
+const appointmentTypeSelect = document.getElementById('appointmentTypeSelect');
+const serviceAreaSelect = document.getElementById('serviceAreaSelect');
+if (appointmentTypeSelect && serviceAreaSelect) {
+    const areaOptions = [...serviceAreaSelect.querySelectorAll('option')];
+    const areaGroups = [...serviceAreaSelect.querySelectorAll('optgroup')];
+    const syncAreaOptions = () => {
+        const selectedOption = appointmentTypeSelect.selectedOptions[0];
+        const serviceId = selectedOption?.dataset.serviceId || '';
+        let currentStillValid = false;
+        areaOptions.forEach(option => {
+            const matches = !option.dataset.serviceId || !serviceId || option.dataset.serviceId === serviceId;
+            option.hidden = !matches;
+            if (matches && option === serviceAreaSelect.selectedOptions[0]) currentStillValid = true;
+        });
+        areaGroups.forEach(group => { group.hidden = ![...group.children].some(option => !option.hidden); });
+        if (!currentStillValid) { serviceAreaSelect.value = ''; serviceAreaSelect.dispatchEvent(new Event('change', { bubbles: true })); }
+    };
+    appointmentTypeSelect.addEventListener('change', syncAreaOptions);
+    syncAreaOptions();
+}
+
 const appointmentDni = document.querySelector('.appointment-form input[name="dni"]');
 const appointmentName = document.querySelector('.appointment-form input[name="patient_name"]');
 if (appointmentDni && appointmentName) {
@@ -348,26 +495,68 @@ document.getElementById('scanDni')?.addEventListener('click',async()=>{
     } catch {close();showModuleToast('No se pudo abrir la cámara','Revisa el permiso de cámara o escribe el DNI manualmente.');}
 });
 
+const roleSidebarEl = document.querySelector('.role-sidebar');
+let roleSidebarBackdrop = null;
+if (roleSidebarEl) {
+    roleSidebarBackdrop = document.createElement('div');
+    roleSidebarBackdrop.className = 'role-sidebar-backdrop';
+    roleSidebarEl.insertAdjacentElement('afterend', roleSidebarBackdrop);
+}
+const openRoleSidebar = () => {
+    roleSidebarEl?.classList.add('open');
+    roleSidebarBackdrop?.classList.add('visible');
+    document.body.classList.add('menu-open');
+};
+const closeRoleSidebar = () => {
+    roleSidebarEl?.classList.remove('open');
+    roleSidebarBackdrop?.classList.remove('visible');
+    document.body.classList.remove('menu-open');
+};
 document.getElementById('roleMenu')?.addEventListener('click', () => {
-    const sidebar = document.querySelector('.role-sidebar');
-    sidebar?.classList.toggle('open');
-    document.body.classList.toggle('menu-open', sidebar?.classList.contains('open'));
+    roleSidebarEl?.classList.contains('open') ? closeRoleSidebar() : openRoleSidebar();
 });
-document.addEventListener('click', event => {
-    const sidebar = document.querySelector('.role-sidebar');
-    if (window.innerWidth <= 760 && sidebar?.classList.contains('open') && !event.target.closest('.role-sidebar') && !event.target.closest('#roleMenu')) {
-        sidebar.classList.remove('open');
-        document.body.classList.remove('menu-open');
-    }
+roleSidebarBackdrop?.addEventListener('click', closeRoleSidebar);
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && roleSidebarEl?.classList.contains('open')) closeRoleSidebar();
 });
+
+// Gestos táctiles: deslizar desde el borde izquierdo abre el menú, deslizar
+// el menú hacia la izquierda lo cierra (patrón de "drawer" fluido en móvil).
+if (roleSidebarEl) {
+    let touchStartX = 0, touchStartY = 0, tracking = false, fromEdge = false;
+    const EDGE = 24, THRESHOLD = 60;
+    document.addEventListener('touchstart', event => {
+        if (window.innerWidth > 760 || event.touches.length !== 1) return;
+        const x = event.touches[0].clientX;
+        const isOpen = roleSidebarEl.classList.contains('open');
+        if (!isOpen && x > EDGE) return;
+        touchStartX = x;
+        touchStartY = event.touches[0].clientY;
+        fromEdge = !isOpen;
+        tracking = true;
+    }, { passive: true });
+    document.addEventListener('touchmove', event => {
+        if (!tracking || event.touches.length !== 1) return;
+        const dx = event.touches[0].clientX - touchStartX;
+        const dy = event.touches[0].clientY - touchStartY;
+        if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+    }, { passive: true });
+    document.addEventListener('touchend', event => {
+        if (!tracking) return;
+        tracking = false;
+        const dx = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+        const isOpen = roleSidebarEl.classList.contains('open');
+        if (fromEdge && !isOpen && dx > THRESHOLD) openRoleSidebar();
+        else if (isOpen && dx < -THRESHOLD) closeRoleSidebar();
+    }, { passive: true });
+}
 const userMenuButton = document.getElementById('userMenuButton');
-const roleSidebar = document.querySelector('.role-sidebar');
-if (roleSidebar) {
+if (roleSidebarEl) {
     const collapseButton = document.createElement('button');
     collapseButton.type = 'button';
     collapseButton.className = 'sidebar-collapse';
     collapseButton.innerHTML = '<span>‹</span>';
-    roleSidebar.appendChild(collapseButton);
+    roleSidebarEl.appendChild(collapseButton);
     const setCollapsed = collapsed => {
         document.body.classList.toggle('sidebar-collapsed', collapsed);
         collapseButton.innerHTML = `<span>${collapsed ? '›' : '‹'}</span>`;
@@ -376,8 +565,7 @@ if (roleSidebar) {
     if (window.innerWidth > 760) setCollapsed(localStorage.getItem('hospital-sidebar') === 'collapsed');
     collapseButton.addEventListener('click', () => {
         if (window.innerWidth <= 760) {
-            roleSidebar.classList.remove('open');
-            document.body.classList.remove('menu-open');
+            closeRoleSidebar();
             return;
         }
         const collapsed = !document.body.classList.contains('sidebar-collapsed');
@@ -454,6 +642,8 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
     if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
     button.disabled=true;button.textContent='Buscando...';
+    result.hidden=false;
+    result.innerHTML='<div class="skeleton-card"><span class="skeleton-avatar"></span><div><span class="skeleton-line" style="width:55%"></span><span class="skeleton-line" style="width:35%"></span></div></div>';
     try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
         const initials=escapeHtml(data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join(''));
         const cards=data.appointments.map(a=>`<article><div class="appointment-date"><strong>${escapeHtml(a.time)}</strong><small>${escapeHtml(a.date)}</small></div><div><span>${escapeHtml(a.service)}</span><h3>${escapeHtml(a.type)}</h3><p>${escapeHtml(a.location||'Ubicación por confirmar')}</p>${a.preparation?`<small class="prep">Preparación: ${escapeHtml(a.preparation)}</small>`:''}</div><b>${escapeHtml(a.status)}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>';
@@ -546,3 +736,158 @@ document.getElementById('passkeyRegister')?.addEventListener('click',async()=>{
         button.classList.add('passkey-error');button.disabled=false;
     }
 });
+
+// --- Actualizaciones en vivo: aplicar HTML ya renderizado del servidor a un contenedor ---
+function applyRowUpdate({ selector, action, id, html }) {
+    const container = document.querySelector(selector);
+    if (!container) return;
+    const existing = id != null ? container.querySelector(`[data-row-id="${CSS.escape(String(id))}"]`) : null;
+    if (action === 'deleted') {
+        existing?.remove();
+        if (container.classList.contains('role-list')) {
+            document.querySelectorAll('select[name="custom_role_id"]').forEach(select => {
+                [...select.options].forEach(option => { if (option.value === String(id)) option.remove(); });
+                if (select.options.length === 0) {
+                    select.disabled = true;
+                    select.add(new Option('No hay roles personalizados todavía', ''));
+                }
+            });
+        }
+    } else if (html) {
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const newEl = template.content.firstElementChild;
+        if (!newEl) return;
+        if (existing) existing.replaceWith(newEl);
+        else container.prepend(newEl);
+        bindAjaxForm(newEl.matches?.('form') ? newEl : newEl.querySelector?.('form') || null);
+        newEl.querySelectorAll?.('form').forEach(bindAjaxForm);
+        // El nodo se reemplaza entero con el HTML fresco del servidor, así que sin
+        // esto el cambio guardado no se nota a simple vista hasta refrescar la página.
+        if (newEl.nodeType === 1) {
+            newEl.classList.add('highlight-flash');
+            setTimeout(() => newEl.classList.remove('highlight-flash'), 1200);
+        }
+    }
+    const placeholder = container.querySelector('[data-empty-placeholder]');
+    if (placeholder) placeholder.hidden = container.querySelector('[data-row-id]') !== null;
+    const roleCount = document.getElementById('roleCount');
+    if (roleCount && container.classList.contains('role-list')) roleCount.textContent = container.querySelectorAll('[data-row-id]').length;
+    if (container.classList.contains('role-list') && action === 'created' && html) {
+        const roleName = container.querySelector(`[data-row-id="${CSS.escape(String(id))}"] strong`)?.textContent?.trim();
+        if (roleName) document.querySelectorAll('select[name="custom_role_id"]').forEach(select => {
+            if (select.disabled) {
+                select.disabled = false;
+                select.innerHTML = '';
+                select.add(new Option('Sin rol personalizado', ''));
+            }
+            if (![...select.options].some(option => option.value === String(id))) select.add(new Option(roleName, String(id)));
+        });
+    }
+}
+
+// --- Envío de formularios por fetch, sin recargar la página ---
+function bindAjaxForm(form) {
+    if (!form || form.dataset.ajaxBound) return;
+    form.dataset.ajaxBound = '1';
+    form.addEventListener('submit', async event => {
+        if (event.defaultPrevented) return; // ej. cancelado por confirm() en .confirm-delete-form
+        if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
+            event.preventDefault();
+            return;
+        }
+        event.preventDefault();
+        const submitBtn = form.querySelector('button[type="submit"], button:not([type])');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+            // Siempre se envía como POST real (con _method spoofeado en el body si
+            // corresponde): PHP solo parsea multipart/form-data en $_POST para
+            // peticiones POST, así que un PUT/DELETE real con FormData nunca ve
+            // el _token y el CSRF falla con 419.
+            const response = await fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' }, body: new FormData(form) });
+            if (response.status === 419) {
+                // La sesión quedó abierta tanto tiempo que el token de seguridad
+                // de la página venció. No hay nada que reintentar sin recargar:
+                // el formulario en pantalla nunca va a tener un token válido.
+                showModuleToast('La página estuvo abierta mucho tiempo', 'Vamos a recargarla para que puedas guardar de nuevo.');
+                setTimeout(() => window.location.reload(), 1600);
+                return;
+            }
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+                showModuleToast('No se pudo guardar', payload?.message || 'Revisa los datos e intenta nuevamente.');
+                return;
+            }
+            (payload?.targets || []).forEach(applyRowUpdate);
+            if (form.dataset.resetOnSuccess) form.reset();
+            // Los listeners de 'ajax:success' pueden cambiar el propio formulario
+            // (ej. volver de modo edición a modo creación) — no se debe pisar eso
+            // después con un texto de botón "original" capturado antes del envío.
+            form.dispatchEvent(new CustomEvent('ajax:success', { detail: payload }));
+            showModuleToast('Listo', 'Los cambios se guardaron correctamente.');
+        } catch {
+            showModuleToast('Sin conexión', 'No se pudo completar la acción. Intenta nuevamente.');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
+}
+document.querySelectorAll('.ajax-form').forEach(bindAjaxForm);
+
+// --- Turnos de profesionales: el formulario de arriba sirve tanto para crear como editar ---
+const scheduleForm = document.getElementById('scheduleForm');
+if (scheduleForm) {
+    const methodField = document.getElementById('scheduleFormMethod');
+    const submitBtn = document.getElementById('scheduleFormSubmit');
+    const cancelBtn = document.getElementById('scheduleFormCancel');
+    const createUrl = scheduleForm.dataset.createUrl;
+    const updateTemplate = scheduleForm.dataset.updateUrlTemplate;
+    const syncSelectLabels = () => scheduleForm.querySelectorAll('select').forEach(s => s.dispatchEvent(new Event('change', { bubbles: true })));
+    const setCreateMode = () => {
+        scheduleForm.action = createUrl;
+        methodField.value = '';
+        submitBtn.textContent = 'Registrar turno';
+        cancelBtn.hidden = true;
+        scheduleForm.reset();
+        syncSelectLabels();
+    };
+    document.getElementById('schedulesTableBody')?.addEventListener('click', event => {
+        const button = event.target.closest('[data-edit-schedule]');
+        if (!button) return;
+        const row = button.closest('[data-row-id]');
+        scheduleForm.action = updateTemplate.replace('__ID__', row.dataset.rowId);
+        methodField.value = 'PUT';
+        submitBtn.textContent = 'Guardar cambios';
+        cancelBtn.hidden = false;
+        scheduleForm.elements.professional_id.value = row.dataset.professionalId || '';
+        scheduleForm.elements.service_id.value = row.dataset.serviceId || '';
+        scheduleForm.elements.service_area_id.value = row.dataset.serviceAreaId || '';
+        scheduleForm.elements.work_shift_id.value = row.dataset.workShiftId || '';
+        scheduleForm.elements.scheduled_date.value = row.dataset.scheduledDate || '';
+        scheduleForm.elements.notes.value = row.dataset.notes || '';
+        syncSelectLabels();
+        scheduleForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    cancelBtn?.addEventListener('click', setCreateMode);
+    scheduleForm.addEventListener('ajax:success', () => { if (methodField.value === 'PUT') setCreateMode(); });
+}
+
+// --- Canales en vivo (Reverb/Echo): solo se suscribe si la pantalla tiene el contenedor correspondiente ---
+if (window.Echo) {
+    const onRowUpdated = data => (data.targets || []).forEach(applyRowUpdate);
+    if (document.getElementById('patientsTableBody') || document.getElementById('serviceTableBody')) {
+        window.Echo.private('citas').listen('.row.updated', onRowUpdated);
+    }
+    if (document.getElementById('schedulesTableBody')) {
+        window.Echo.private('admin.schedules').listen('.row.updated', onRowUpdated);
+    }
+    if (document.querySelector('.role-list')) {
+        window.Echo.private('admin.roles').listen('.row.updated', onRowUpdated);
+    }
+    if (document.getElementById('professionalsList')) {
+        window.Echo.private('admin.professionals').listen('.row.updated', onRowUpdated);
+    }
+    if (document.getElementById('usersList')) {
+        window.Echo.private('admin.users').listen('.row.updated', onRowUpdated);
+    }
+}

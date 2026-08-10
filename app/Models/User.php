@@ -109,7 +109,10 @@ class User extends Authenticatable implements PasskeyUser
 
     public function getRoleAttribute(): ?string
     {
-        return $this->rol?->nombreRol;
+        // El catálogo legacy de roles del hospital usa mayúsculas ("Administrador");
+        // el resto del código compara en minúsculas, así que se normaliza aquí una
+        // sola vez en vez de tocar cada comparación.
+        return $this->rol ? mb_strtolower($this->rol->nombreRol) : null;
     }
 
     public function getActiveAttribute(): bool
@@ -147,9 +150,27 @@ class User extends Authenticatable implements PasskeyUser
 
         return match ($this->role) {
             'portero' => $module === 'portero',
-            'admision' => $module === 'citas',
+            'admision' => $module === 'portero',
             'administrador' => true,
-            default => $module === 'servicio',
+            default => $module === 'portero',
+        };
+    }
+
+    /** Módulo al que debe entrar el usuario tras iniciar sesión, respetando su rol personalizado si tiene uno. */
+    public function defaultModule(): string
+    {
+        $customRole = $this->resolvedCustomRole();
+        if ($customRole?->active && ! empty($customRole->modules)) {
+            foreach (['portero', 'administrador'] as $candidate) {
+                if (in_array($candidate, $customRole->modules, true)) return $candidate;
+            }
+        }
+
+        return match ($this->role) {
+            'portero' => 'portero',
+            'admision' => 'portero',
+            'administrador' => 'administrador',
+            default => 'portero',
         };
     }
 }

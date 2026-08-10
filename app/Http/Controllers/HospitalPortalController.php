@@ -8,6 +8,7 @@ use App\Models\ProfessionalSchedule;
 use App\Models\Service;
 use App\Models\ServiceArea;
 use App\Models\User;
+use App\Support\LiveUpdate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,12 +16,30 @@ use Illuminate\View\View;
 
 class HospitalPortalController extends Controller
 {
-    private const MODULES = ['portero','citas','servicio','administrador'];
+    private const MODULES = ['portero','administrador'];
+    /**
+     * Una cita es visible tanto en Portería (siempre, dentro de su rango de
+     * fecha) como en Atención profesional (solo si su estado ya es visible
+     * ahí). Al cambiar de estado puede "aparecer" o "desaparecer" de la vista
+     * profesional, así que cada contenedor recibe su propia acción.
+     */
+    private function broadcastAppointment(Request $request, Appointment $appointment, string $porteriaAction, ?string $fromStatus = null)
+    {
+        $appointment->loadMissing(['patient', 'type.service', 'area', 'subarea']);
+        $targets = [[
+            'selector' => '#patientsTableBody',
+            'action' => $porteriaAction,
+            'id' => $appointment->id,
+            'html' => $porteriaAction === 'deleted' ? null : view('portal.partials.patient-row', ['a' => $appointment])->render(),
+        ]];
+
+        return LiveUpdate::respondMulti($request, 'portero', $targets);
+    }
 
     public function index(Request $request, ?string $role=null): View
     {
         $user=$request->user();
-        $role ??= match($user->role){'portero'=>'portero','admision'=>'citas','administrador'=>'administrador',default=>'servicio'};
+        $role ??= $user->defaultModule();
         abort_unless(in_array($role,self::MODULES,true),404);
         abort_unless($user->canAccessModule($role),403,'No tiene permiso para acceder a este módulo.');
 
@@ -34,17 +53,11 @@ class HospitalPortalController extends Controller
         } else {
             $query->whereDate('scheduled_at',today());
         }
-        if($role==='servicio') {
-            $query->whereIn('status',['confirmada','ingreso','atendida']);
-            if($user->role!=='administrador') $query->where('trabajador_id',$user->trabajadorRecord?->idTrabajador ?: 0);
-        }
         $today=$query->get();
         $services=Service::where('active',true)->with(['appointmentTypes'=>fn($q)=>$q->where('active',true)])->orderBy('name')->get();
-        $areas=ServiceArea::where('active',true)->with(['service','subareas'=>fn($q)=>$q->where('active',true)->orderBy('name')])->orderBy('name')->get();
-        $professionals=$this->professionalUsers();
         $metrics=['citas_hoy'=>Appointment::whereDate('scheduled_at',today())->count(),'confirmadas'=>Appointment::whereDate('scheduled_at',today())->where('status','confirmada')->count(),'ingresos'=>DB::table('access_logs')->whereDate('registered_at',today())->where('movement','ingreso')->count(),'pendientes'=>Appointment::whereDate('scheduled_at',today())->where('status','programada')->count()];
         $upcoming=$role==='portero'?Appointment::with(['patient','type.service'])->whereDate('scheduled_at',today())->where('status','programada')->whereBetween('scheduled_at',[now(),now()->addMinutes(60)])->orderBy('scheduled_at')->get():collect();
-        return view('portal',compact('role','today','metrics','services','areas','professionals','user','upcoming','dateFrom','dateTo'));
+        return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo'));
     }
 
     /** Profesionales con un servicio ya asignado (vía trabajador) — para el selector de citas. */
@@ -87,6 +100,11 @@ class HospitalPortalController extends Controller
         $patient->save();
         $appointment=Appointment::create(['code'=>'CIT-'.now()->format('ymdHis').'-'.random_int(10,99),'paciente_id'=>$patient->IdPaciente,'appointment_type_id'=>$data['appointment_type_id'],'service_area_id'=>$data['service_area_id']??null,'service_subarea_id'=>$data['service_subarea_id']??null,'trabajador_id'=>$trabajadorId,'created_by'=>$request->user()->id,'scheduled_at'=>$data['scheduled_at'],'status'=>'programada','room'=>$data['room']??null,'notes'=>$data['notes']??null]);
         $this->recordStatus($request,$appointment,null,'programada','Cita registrada por Admisión.');
+
+        if ($response = $this->broadcastAppointment($request, $appointment, 'created')) {
+            return $response;
+        }
+
         return back()->with('success','Cita registrada y enviada al servicio correspondiente.');
     }
 
@@ -103,12 +121,18 @@ class HospitalPortalController extends Controller
         abort_unless($request->user()->canAccessModule('portero'),403);
         $data=$request->validate(['access_point'=>'nullable|string|max:80']);
         if ($appointment->status !== 'programada') return back()->withErrors('La cita ya fue confirmada o no está disponible.');
+        $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$data){
             $from=$appointment->status; $point=$data['access_point']??'Puerta principal';
             $appointment->update(['status'=>'confirmada','confirmed_by'=>$request->user()->id,'confirmed_at'=>now(),'access_point'=>$point]);
             DB::table('access_logs')->insert(['paciente_id'=>$appointment->paciente_id,'appointment_id'=>$appointment->id,'registered_by'=>$request->user()->id,'movement'=>'ingreso','person_type'=>'paciente','access_point'=>$point,'reason'=>'Asistencia a '.$appointment->type()->value('name'),'companions'=>0,'notes'=>'Ingreso generado al confirmar la cita.','registered_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
             $this->recordStatus($request,$appointment,$from,'confirmada','Llegada confirmada por Portería.');
         });
+
+        if ($response = $this->broadcastAppointment($request, $appointment, 'updated', $from)) {
+            return $response;
+        }
+
         return back()->with('success','Asistencia e ingreso confirmados. El paciente ya aparece en el panel profesional.');
     }
 
@@ -116,11 +140,17 @@ class HospitalPortalController extends Controller
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
         if ($appointment->status !== 'programada') return back()->withErrors('Solo se puede marcar inasistencia en citas que aún no fueron confirmadas.');
+        $from = $appointment->status;
         DB::transaction(function()use($request,$appointment){
             $from=$appointment->status;
             $appointment->update(['status'=>'no_asistio']);
             $this->recordStatus($request,$appointment,$from,'no_asistio','Paciente marcado como inasistencia por Portería.');
         });
+
+        if ($response = $this->broadcastAppointment($request, $appointment, 'updated', $from)) {
+            return $response;
+        }
+
         return back()->with('success','Se registró la inasistencia del paciente.');
     }
 
@@ -137,7 +167,13 @@ class HospitalPortalController extends Controller
         $ownTrabajadorId=$request->user()->trabajadorRecord?->idTrabajador;
         if($request->user()->role!=='administrador') abort_unless($appointment->trabajador_id===$ownTrabajadorId,403);
         if (! in_array($appointment->status,['confirmada','ingreso'],true)) return back()->withErrors('Portería debe confirmar primero la llegada del paciente.');
+        $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$ownTrabajadorId){$from=$appointment->status;$appointment->update(['status'=>'atendida','trabajador_id'=>$appointment->trabajador_id ?: $ownTrabajadorId,'attention_started_at'=>$appointment->attention_started_at?:now(),'attention_completed_at'=>now()]);$this->recordStatus($request,$appointment,$from,'atendida','Atención confirmada por el profesional.');});
+
+        if ($response = $this->broadcastAppointment($request, $appointment, 'updated', $from)) {
+            return $response;
+        }
+
         return back()->with('success','Atención del paciente confirmada correctamente.');
     }
 
