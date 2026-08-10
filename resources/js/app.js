@@ -834,6 +834,20 @@ function bindAjaxForm(form) {
 }
 document.querySelectorAll('.ajax-form').forEach(bindAjaxForm);
 
+// Si un administrador cambia la contraseña, el usuario recibe el aviso y se
+// cierra esta sesión en pocos segundos, incluso si permanece en otra pantalla.
+if (document.querySelector('meta[name="csrf-token"]')) {
+    setInterval(async () => {
+        try {
+            const response = await fetch('/api/sesion/estado', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+            if (response.status !== 409) return;
+            const payload = await response.json().catch(() => ({}));
+            showModuleToast('Contraseña actualizada', payload.message || 'Tu sesión será cerrada por seguridad.');
+            setTimeout(() => window.location.assign('/login'), 1300);
+        } catch { /* La comprobación no debe afectar el uso normal de la página. */ }
+    }, 8000);
+}
+
 // Al marcar una acción, su módulo padre queda habilitado automáticamente.
 document.addEventListener('change', event => {
     const action = event.target.closest('.module-actions input[type="checkbox"]');
@@ -899,4 +913,22 @@ if (window.Echo) {
     if (document.getElementById('usersList')) {
         window.Echo.private('admin.users').listen('.row.updated', onRowUpdated);
     }
+}
+
+// --- Cierre forzado de sesión: si la contraseña cambió (desde este mismo
+// dispositivo en otra pestaña, o porque un admin la restablece a futuro), el
+// resto de sesiones abiertas se enteran en el siguiente sondeo y salen solas
+// en vez de seguir "adentro" con una contraseña que ya no es válida.
+if (document.querySelector('form[action$="/logout"]')) {
+    const checkSessionStatus = async () => {
+        try {
+            const response = await fetch('/api/sesion/estado', { headers: { Accept: 'application/json' } });
+            if (response.status !== 409) return;
+            const payload = await response.json().catch(() => null);
+            clearInterval(sessionStatusTimer);
+            alert(payload?.message || 'Tu sesión se cerró. Inicia sesión nuevamente.');
+            window.location.href = '/login';
+        } catch { /* sin conexión: se reintenta en el siguiente sondeo */ }
+    };
+    const sessionStatusTimer = setInterval(checkSessionStatus, 20000);
 }

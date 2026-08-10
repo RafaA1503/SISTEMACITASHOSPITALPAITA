@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminCatalogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DniLookupController;
 use App\Http\Controllers\HospitalPortalController;
@@ -55,6 +56,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
     Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
+    Route::get('/api/sesion/estado', [AuthController::class, 'sessionStatus'])->name('session.status');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
     Route::get('/administracion/reportes/excel', [ReportController::class, 'exportExcel'])->name('admin.reports.excel');
     Route::get('/administracion/reportes/pdf', [ReportController::class, 'exportPdf'])->name('admin.reports.pdf');
@@ -65,5 +67,12 @@ Route::middleware('auth')->group(function () {
     Route::delete('/administracion/roles/{role}', [RoleController::class, 'destroy'])->name('admin.roles.destroy');
     Route::put('/administracion/roles/usuarios/{user}', [RoleController::class, 'assign'])->name('admin.roles.assign');
     Route::put('/administracion/roles/usuarios/{user}/estado', [RoleController::class, 'setUserStatus'])->name('admin.roles.users.status');
+    Route::put('/administracion/roles/usuarios/{user}/clave', [RoleController::class, 'resetUserPassword'])->name('admin.roles.users.password');
     Route::delete('/administracion/roles/usuarios/{user}', [RoleController::class, 'destroyUser'])->name('admin.roles.users.destroy');
+
+    Route::get('/administracion/servicios', [AdminCatalogController::class, 'index'])->name('admin.catalog');
+    Route::post('/administracion/servicios/profesionales', [AdminCatalogController::class, 'storeProfessional'])->name('admin.professionals.store');
+    Route::post('/administracion/servicios/turnos', [AdminCatalogController::class, 'storeSchedule'])->name('admin.professionals.schedule.store');
+    Route::put('/administracion/servicios/turnos/{schedule}', [AdminCatalogController::class, 'updateSchedule'])->name('admin.professionals.schedule.update');
+    Route::delete('/administracion/servicios/turnos/{schedule}', [AdminCatalogController::class, 'destroySchedule'])->name('admin.professionals.schedule.destroy');
 });

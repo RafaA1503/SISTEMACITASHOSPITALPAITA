@@ -10,6 +10,8 @@ use App\Support\AuditLogger;
 use App\Support\LiveUpdate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
@@ -49,7 +51,33 @@ class AuthController extends Controller
     }
 
     public function logout(Request $request) { Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken(); return redirect()->route('login'); }
-    public function settings(Request $request) { return view('auth.settings', ['user' => $request->user(), 'passkeys' => $request->user()->passkeys]); }
+    public function settings(Request $request)
+    {
+        $sessions = DB::table('sessions')->where('user_id', $request->user()->id)->orderByDesc('last_activity')->get()->map(function ($session) use ($request) {
+            $session->last_seen = \Carbon\Carbon::createFromTimestamp($session->last_activity)->timezone(config('app.timezone'))->format('d/m/Y H:i');
+            $session->current = hash_equals($request->session()->getId(), $session->id);
+            $session->device = $this->sessionDevice((string) $session->user_agent);
+            return $session;
+        });
+
+        return view('auth.settings', ['user' => $request->user(), 'passkeys' => $request->user()->passkeys, 'sessions' => $sessions]);
+    }
+
+    public function sessionStatus(Request $request)
+    {
+        $user = $request->user();
+        $sessionKey = 'force_password_logout_session_'.$request->session()->getId();
+        if (! Cache::has($sessionKey)) {
+            return response()->json(['active' => true]);
+        }
+
+        Cache::forget($sessionKey);
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return response()->json(['message' => 'Un administrador cambió tu contraseña. Inicia sesión nuevamente.'], 409);
+    }
     public function photo(Request $request)
     {
         abort_unless($request->user()->photo_path && Storage::disk('public')->exists($request->user()->photo_path), 404);
@@ -78,9 +106,21 @@ class AuthController extends Controller
     public function password(Request $request)
     {
         $request->validate(['current_password' => 'required|current_password', 'password' => ['required', 'confirmed', Password::min(8)]]);
-        $request->user()->update(['password' => Hash::make($request->password)]);
+        $user = $request->user();
+        $user->update(['password' => Hash::make($request->password)]);
 
-        return back()->with('success', 'Contraseña actualizada.');
+        // La contraseña vieja ya no debería servir en ningún otro dispositivo:
+        // se marcan sus otras sesiones para que el polling de sessionStatus()
+        // las cierre solas en cuanto el navegador vuelva a consultar.
+        $this->forceLogoutOtherSessions($user->id, $request->session()->getId());
+
+        return back()->with('success', 'Contraseña actualizada. Tus otras sesiones se cerrarán automáticamente.');
+    }
+
+    private function forceLogoutOtherSessions(int $userId, string $currentSessionId): void
+    {
+        DB::table('sessions')->where('user_id', $userId)->where('id', '!=', $currentSessionId)
+            ->pluck('id')->each(fn ($sessionId) => Cache::put('force_password_logout_session_'.$sessionId, true, now()->addMinutes(15)));
     }
 
     public function users(Request $request)
@@ -133,5 +173,12 @@ class AuthController extends Controller
         }
 
         return back()->with('success', 'Rol y funciones actualizados.');
+    }
+
+    private function sessionDevice(string $userAgent): string
+    {
+        $browser = str_contains($userAgent, 'Edg/') ? 'Microsoft Edge' : (str_contains($userAgent, 'Firefox/') ? 'Firefox' : (str_contains($userAgent, 'Chrome/') ? 'Google Chrome' : 'Navegador'));
+        $platform = str_contains($userAgent, 'Windows') ? 'Windows' : (str_contains($userAgent, 'Android') ? 'Android' : (str_contains($userAgent, 'iPhone') || str_contains($userAgent, 'iPad') ? 'iOS' : 'Dispositivo'));
+        return $browser.' · '.$platform;
     }
 }

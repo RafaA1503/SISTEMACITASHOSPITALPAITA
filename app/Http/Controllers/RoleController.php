@@ -11,6 +11,7 @@ use App\Support\AuditLogger;
 use App\Support\LiveUpdate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -308,6 +309,28 @@ class RoleController extends Controller
         }
 
         return back()->with('success', 'Usuario eliminado permanentemente.');
+    }
+
+    public function resetUserPassword(Request $request, User $user)
+    {
+        $this->admin($request);
+        abort_unless($user->idSistema === User::sistemaId(), 404);
+
+        $data = $request->validate([
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user->update(['password' => $data['password']]);
+        DB::table('sessions')->where('user_id', $user->id)->pluck('id')->each(
+            fn (string $sessionId) => Cache::put('force_password_logout_session_'.$sessionId, true, now()->addDay())
+        );
+        AuditLogger::log($request, 'user.password_reset_by_admin', 'User', $user->id, ['reset_by' => $request->user()->id]);
+
+        if ($response = LiveUpdate::respondMulti($request, 'admin.roles', [])) {
+            return $response;
+        }
+
+        return back()->with('success', 'Contraseña actualizada correctamente.');
     }
 
     private function validatedRole(Request $request, ?Rol $role = null): array
