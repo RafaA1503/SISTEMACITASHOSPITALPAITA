@@ -20,11 +20,21 @@ use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
-    public function loginView() { return view('auth.login'); }
+    public function loginView(Request $request)
+    {
+        if (! $request->session()->has('login_captcha_answer')) $this->refreshLoginCaptcha($request);
+
+        return view('auth.login', ['captchaQuestion' => $request->session()->get('login_captcha_question')]);
+    }
 
     public function login(Request $request)
     {
-        $data = $request->validate(['email' => 'required|email', 'password' => 'required']);
+        $data = $request->validate(['email' => 'required|email', 'password' => 'required', 'captcha' => 'required|digits_between:1,3']);
+        $captchaAnswer = (string) $request->session()->get('login_captcha_answer', '');
+        if ($captchaAnswer === '' || ! hash_equals($captchaAnswer, trim((string) $data['captcha']))) {
+            $this->refreshLoginCaptcha($request);
+            return back()->withErrors(['captcha' => 'El resultado del CAPTCHA no es correcto.'])->onlyInput('email');
+        }
         $correo = strtolower(trim($data['email']));
 
         $throttleKey = $correo.'|'.$request->ip();
@@ -46,8 +56,19 @@ class AuthController extends Controller
             return back()->withErrors(['email' => 'La cuenta está desactivada.']);
         }
         $request->session()->regenerate();
+        $request->session()->forget(['login_captcha_question', 'login_captcha_answer']);
 
         return redirect()->route('portal', $request->user()->defaultModule());
+    }
+
+    private function refreshLoginCaptcha(Request $request): void
+    {
+        $left = random_int(2, 9);
+        $right = random_int(1, 9);
+        $request->session()->put([
+            'login_captcha_question' => "{$left} + {$right}",
+            'login_captcha_answer' => (string) ($left + $right),
+        ]);
     }
 
     public function logout(Request $request) { Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken(); return redirect()->route('login'); }

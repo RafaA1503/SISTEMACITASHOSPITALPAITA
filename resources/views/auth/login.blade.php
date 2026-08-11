@@ -7,6 +7,7 @@
 @if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif
 @if($errors->any())<div class="auth-error">{{ $errors->first() }}</div>@endif
 <form method="POST" action="{{ route('login.store') }}">@csrf
+<label class="login-captcha"><span>Verificacion de seguridad</span><div><b>{{ $captchaQuestion }} =</b><input name="captcha" inputmode="numeric" autocomplete="off" required maxlength="3" placeholder="Resultado" aria-label="Resultado de {{ $captchaQuestion }}"></div><small>Resuelve la operacion para ingresar con correo y contrasena.</small></label>
 <label>Correo institucional<input name="email" type="email" value="{{ old('email') }}" required autofocus autocomplete="username" placeholder="usuario@lamerced.gob.pe"></label>
 <label>Contraseña<div class="password-field"><input id="loginPassword" name="password" type="password" required autocomplete="current-password" placeholder="••••••••"><button id="togglePassword" type="button">Mostrar</button></div></label>
 <label class="remember"><input type="checkbox" name="remember"> Mantener sesión iniciada</label><button class="login-primary">Ingresar al sistema</button></form>

@@ -3,6 +3,7 @@ import { Passkeys } from '@laravel/passkeys';
 
 // Angular se descarga solo en Portería; los demás módulos no cargan su peso.
 if (document.querySelector('.porter-search')) import('./angular/patient-access');
+if (document.querySelector('.quick-actions')) import('./angular/admin-dashboard');
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const normalizeSearch = value => String(value ?? '').toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -318,6 +319,84 @@ render();
 
 document.getElementById('menuBtn')?.addEventListener('click', () => document.getElementById('sidebar')?.classList.toggle('open'));
 const liveClock = document.getElementById('liveClock');
+
+// Demostracion de visitas hospitalarias: permanece dentro de PorterÃ­a y no
+// escribe datos hasta que se conecte al registro definitivo de hospitalizaciÃ³n.
+const porterPanel = document.querySelector('.porter-search');
+if (porterPanel) {
+    const visitDemo = document.createElement('section');
+    visitDemo.className = 'portal-panel visit-demo';
+    visitDemo.innerHTML = `
+        <div class="panel-title"><div><h2>Visitas hospitalarias</h2><p>Demostracion: registra al familiar que visita a un paciente hospitalizado.</p></div><span class="secure-badge">Sin crear otro modulo</span></div>
+        <div class="visit-demo-body">
+            <div class="visit-patient"><span>PA</span><div><strong>Paciente hospitalizado de ejemplo</strong><small>Hospitalizacion · Cama 12 · Medicina</small></div><b>Atencion activa</b></div>
+            <label class="visit-patient-select">Paciente hospitalizado<select id="visitPatientSelect"><option value="maria">Maria Flores Gomez · Cama 12 · Medicina</option><option value="carlos">Carlos Ruiz Chunga · Cama 08 · Cirugia</option><option value="ana">Ana Torres Vilela · Cama 04 · Pediatria</option></select></label>
+            <form id="visitDemoForm" class="visit-demo-form">
+                <label>Nombre del visitante<input name="name" required maxlength="100" placeholder="Nombres y apellidos"></label>
+                <label>DNI<input name="dni" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="8 digitos"></label>
+                <label>Parentesco<select name="relationship" required><option value="">Seleccionar</option><option>Madre / padre</option><option>Hijo(a)</option><option>Hermano(a)</option><option>Conyuge</option><option>Otro familiar</option></select></label>
+                <button class="primary-btn" type="submit">Registrar entrada</button>
+            </form>
+        </div>
+        <div class="visit-demo-list"><div class="visit-demo-list-head"><strong>Visitas registradas ahora</strong><small>La salida se registra desde esta misma lista.</small></div><p class="portal-empty" id="visitDemoEmpty">Aun no hay visitantes registrados en esta demostracion.</p><div id="visitDemoRows"></div></div>
+    `;
+    const visitTitle = visitDemo.querySelector('.panel-title');
+    const visitToggle = document.createElement('button');
+    visitToggle.type = 'button';
+    visitToggle.className = 'visit-minimize';
+    visitToggle.setAttribute('aria-expanded', 'true');
+    visitToggle.textContent = 'Minimizar';
+    visitTitle.appendChild(visitToggle);
+    const visitContent = document.createElement('div');
+    visitContent.className = 'visit-demo-content';
+    while (visitTitle.nextElementSibling) visitContent.appendChild(visitTitle.nextElementSibling);
+    visitDemo.appendChild(visitContent);
+    visitToggle.addEventListener('click', () => {
+        const minimized = !visitContent.hidden;
+        visitContent.hidden = minimized;
+        visitToggle.textContent = minimized ? 'Mostrar visitas' : 'Minimizar';
+        visitToggle.setAttribute('aria-expanded', String(!minimized));
+    });
+    porterPanel.insertAdjacentElement('afterend', visitDemo);
+    const visitForm = visitDemo.querySelector('#visitDemoForm');
+    const visitRows = visitDemo.querySelector('#visitDemoRows');
+    const visitEmpty = visitDemo.querySelector('#visitDemoEmpty');
+    const visitPatientSelect = visitDemo.querySelector('#visitPatientSelect');
+    const visitPatientCard = visitDemo.querySelector('.visit-patient');
+    const hospitalPatients = {
+        maria: { initials: 'MF', name: 'Maria Flores Gomez', detail: 'Hospitalizacion · Cama 12 · Medicina' },
+        carlos: { initials: 'CR', name: 'Carlos Ruiz Chunga', detail: 'Hospitalizacion · Cama 08 · Cirugia' },
+        ana: { initials: 'AT', name: 'Ana Torres Vilela', detail: 'Hospitalizacion · Cama 04 · Pediatria' },
+    };
+    const updateVisitPatient = () => {
+        const patient = hospitalPatients[visitPatientSelect.value];
+        visitPatientCard.querySelector('span').textContent = patient.initials;
+        visitPatientCard.querySelector('strong').textContent = patient.name;
+        visitPatientCard.querySelector('small').textContent = patient.detail;
+    };
+    visitPatientSelect.addEventListener('change', updateVisitPatient);
+    visitForm.addEventListener('submit', event => {
+        event.preventDefault();
+        const values = new FormData(visitForm);
+        const name = String(values.get('name') || '').trim();
+        const dni = String(values.get('dni') || '').replace(/[^0-9]/g, '');
+        const relationship = String(values.get('relationship') || '').trim();
+        const patient = hospitalPatients[visitPatientSelect.value];
+        if (!/^[0-9]{8}$/.test(dni)) { showModuleToast('DNI invalido', 'Ingresa los 8 digitos del visitante para continuar.'); return; }
+        visitForm.elements.dni.value = dni;
+        const row = document.createElement('article');
+        row.className = 'visit-row';
+        row.innerHTML = `<div><strong>${escapeHtml(name)}</strong><small>DNI ${escapeHtml(dni)} · ${escapeHtml(relationship)}</small></div><time>Entrada ${new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}</time><button type="button">Registrar salida</button>`;
+        row.querySelector('button').addEventListener('click', () => { row.remove(); visitEmpty.hidden = visitRows.children.length !== 0; showModuleToast('Salida registrada', 'La visita de demostracion fue cerrada.'); });
+        row.dataset.patient = visitPatientSelect.value;
+        row.querySelector('small').textContent = `Visita a ${patient.name} · DNI ${dni} · ${relationship}`;
+        visitRows.prepend(row);
+        visitEmpty.hidden = true;
+        visitForm.reset();
+        showModuleToast('Entrada registrada', 'El familiar aparece vinculado al paciente hospitalizado.');
+    });
+}
+
 if (liveClock) {
     const updateClock = () => { liveClock.textContent = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); };
     updateClock();
@@ -327,6 +406,14 @@ const showModuleToast = (title = 'Acción completada', message = 'Los cambios se
     const toast = document.getElementById('moduleToast'); if(!toast) return;
     toast.querySelector('strong').textContent = title; toast.querySelector('p').textContent = message;
     toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2800);
+};
+let liveReloadPending = false;
+const reloadAfterLiveUpdate = (message = 'Se detectó una actualización. Recargando la información…') => {
+    if (liveReloadPending) return;
+    liveReloadPending = true;
+    sessionStorage.setItem('hospital-live-update-notice', message);
+    showModuleToast('Nueva actualización', message);
+    setTimeout(() => window.location.reload(), 900);
 };
 const pendingLiveUpdateNotice = sessionStorage.getItem('hospital-live-update-notice');
 if (pendingLiveUpdateNotice) {
@@ -674,10 +761,7 @@ if (document.getElementById('patientsTableBody')) {
             if (!response.ok) return;
             const { version } = await response.json();
             if (appointmentsVersion !== null && appointmentsVersion !== version) {
-                const message = 'Se detectó un cambio en las citas. Actualizando la información…';
-                sessionStorage.setItem('hospital-live-update-notice', message);
-                showModuleToast('Nueva actualización', message);
-                setTimeout(() => window.location.reload(), 900);
+                reloadAfterLiveUpdate('Se detectó un cambio en las citas. Actualizando la información…');
                 return;
             }
             appointmentsVersion = version;
@@ -708,7 +792,7 @@ if (notifBell) {
             if (count !== lastKnownCount) {
                 notifBell.classList.add('notif-pulse');
                 setTimeout(() => notifBell.classList.remove('notif-pulse'), 1500);
-                if (count > lastKnownCount) window.location.reload();
+                if (count > lastKnownCount) reloadAfterLiveUpdate('Hay cambios en las citas programadas. Actualizando la información…');
                 lastKnownCount = count;
             }
         } catch { /* red intermitente: se reintenta en el siguiente ciclo */ }
@@ -1055,7 +1139,10 @@ if (scheduleForm) {
 
 // --- Canales en vivo (Reverb/Echo): solo se suscribe si la pantalla tiene el contenedor correspondiente ---
 if (window.Echo) {
-    const onRowUpdated = data => (data.targets || []).forEach(applyRowUpdate);
+    const onRowUpdated = data => {
+        (data.targets || []).forEach(applyRowUpdate);
+        reloadAfterLiveUpdate();
+    };
     if (document.getElementById('patientsTableBody') || document.getElementById('serviceTableBody')) {
         window.Echo.private('citas').listen('.row.updated', onRowUpdated);
     }
