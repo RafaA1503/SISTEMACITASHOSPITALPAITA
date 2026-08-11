@@ -157,7 +157,11 @@ pageLoader.setAttribute('role', 'status');
 pageLoader.setAttribute('aria-live', 'polite');
 pageLoader.innerHTML = `<div class="loader-card"><div class="loader-logo"><img src="/logo-hospital-la-merced.png" alt=""></div><strong>Hospital Nuestra Señora de las Mercedes</strong><span>Cargando sistema...</span><i></i></div>`;
 document.body.appendChild(pageLoader);
-const hideLoader = () => requestAnimationFrame(() => requestAnimationFrame(() => pageLoader.classList.remove('visible')));
+// Antes usaba doble requestAnimationFrame para que la transición se viera
+// suave, pero rAF no se garantiza si la pestaña no está pintando activamente
+// (recién navegada, en segundo plano) — y si nunca se dispara, el loader se
+// queda visible para siempre bloqueando todos los clics de la página.
+const hideLoader = () => pageLoader.classList.remove('visible');
 const showLoader = (message = 'Cargando sistema...') => {
     pageLoader.querySelector('span').textContent = message;
     pageLoader.classList.add('visible');
@@ -198,6 +202,29 @@ themeToggle.className = 'theme-toggle';
 document.body.appendChild(themeToggle);
 applyTheme(document.documentElement.dataset.theme);
 themeToggle.addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+// Respaldo del interruptor: aplica el tema directamente sobre <html> y evita
+// que un manejador antiguo o una actualización del DOM anule el cambio.
+const forceTheme = requestedTheme => {
+    const theme = requestedTheme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+    try { localStorage.setItem('hospital-theme', theme); } catch { /* almacenamiento no disponible */ }
+    document.cookie = `hospital_theme=${theme};path=/;max-age=31536000;samesite=lax`;
+    const button = document.getElementById('themeToggle');
+    if (button) {
+        const dark = theme === 'dark';
+        button.innerHTML = dark ? '<span>☀</span><b>Modo claro</b>' : '<span>☾</span><b>Modo oscuro</b>';
+        button.setAttribute('aria-pressed', String(dark));
+        button.setAttribute('aria-label', dark ? 'Activar modo claro' : 'Activar modo oscuro');
+    }
+};
+document.addEventListener('click', event => {
+    if (!event.target.closest('#themeToggle')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    forceTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}, true);
 
 document.getElementById('togglePassword')?.addEventListener('click', event => {
     const input = document.getElementById('loginPassword');
@@ -665,6 +692,19 @@ if (scanBtn) {
     const scanHint = document.getElementById('scanHint');
     let scanStream = null;
     let scanRafId = null;
+    let scanScrollY = 0;
+
+    const lockScannerScroll = () => {
+        scanScrollY = window.scrollY;
+        document.body.classList.add('scanner-open');
+        document.body.style.top = `-${scanScrollY}px`;
+    };
+
+    const unlockScannerScroll = () => {
+        document.body.classList.remove('scanner-open');
+        document.body.style.top = '';
+        window.scrollTo(0, scanScrollY);
+    };
 
     const extractDni = raw => {
         const boundaryMatch = raw.match(/\b\d{8}\b/);
@@ -679,6 +719,7 @@ if (scanBtn) {
         scanStream?.getTracks().forEach(track => track.stop());
         scanStream = null;
         scanModal.hidden = true;
+        unlockScannerScroll();
     };
 
     const scanFrame = async detector => {
@@ -698,6 +739,7 @@ if (scanBtn) {
     };
 
     const startScan = async () => {
+        lockScannerScroll();
         scanModal.hidden = false;
         if (!('BarcodeDetector' in window)) {
             scanHint.textContent = 'Tu navegador no soporta escaneo por cámara. Usa un lector USB/Bluetooth o ingresa el DNI manualmente.';
@@ -717,6 +759,9 @@ if (scanBtn) {
     scanBtn.addEventListener('click', startScan);
     document.getElementById('scanModalClose')?.addEventListener('click', stopScan);
     scanModal.addEventListener('click', event => { if (event.target === scanModal) stopScan(); });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !scanModal.hidden) stopScan();
+    });
 }
 
 document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{

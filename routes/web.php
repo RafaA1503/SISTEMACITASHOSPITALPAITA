@@ -7,6 +7,7 @@ use App\Http\Controllers\HospitalPortalController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\PasswordResetController;
+use App\Http\Controllers\CareFlowController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -33,6 +34,7 @@ Route::middleware('auth')->group(function () {
 
     Route::view('/pacientes', 'modules', ['module' => 'pacientes'])->name('pacientes');
     Route::view('/control-acceso', 'modules', ['module' => 'accesos'])->name('accesos');
+    Route::get('/control-acceso/atenciones/{flow?}', [CareFlowController::class, 'index'])->name('access.care-flow');
     Route::view('/historial', 'modules', ['module' => 'historial'])->name('historial');
     Route::view('/configuracion', 'modules', ['module' => 'configuracion'])->name('configuracion');
     Route::view('/ayuda', 'modules', ['module' => 'ayuda'])->name('ayuda');
