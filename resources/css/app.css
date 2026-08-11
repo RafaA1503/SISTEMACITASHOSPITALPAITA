@@ -113,6 +113,7 @@ html[data-theme=dark] .skeleton-line:after{background:linear-gradient(90deg,tran
 .portal-table tbody tr:active,.admin-services article:active,.account-card:active,.user-admin-card:active,.appointment-cards article:active,.compact-list article:active{transform:scale(.985);transition:transform .12s var(--ease-fluid)}
 }
 @media(max-width:760px){
+html.scanner-open,body.scanner-open{height:100%;overflow:hidden;overscroll-behavior:none}
 .modal-backdrop{align-items:flex-end;padding:0;animation:sheetBackdropIn .28s var(--ease-fluid) both}
 .modal-backdrop .modal{width:100%;max-width:none;border-radius:20px 20px 0 0;padding:26px 20px calc(24px + env(safe-area-inset-bottom));animation:sheetUp .32s var(--ease-fluid) both;max-height:88vh;overflow-y:auto}
 .modal-backdrop .modal:before{content:'';display:block;width:38px;height:4px;border-radius:3px;background:var(--line);margin:-10px auto 16px}
@@ -122,7 +123,7 @@ html[data-theme=dark] .skeleton-line:after{background:linear-gradient(90deg,tran
 #scanModal .modal-close{top:calc(14px + env(safe-area-inset-top));right:16px;width:42px;height:42px;border-radius:50%;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;z-index:1}
 #scanModal .modal-status{text-align:center}
 #scanModal .scan-modal h2{text-align:center;font-size:20px;margin:8px 28px 18px}
-#scanModal .scan-modal video{width:100%;max-height:min(56dvh,500px);aspect-ratio:3/4;object-fit:cover;border-radius:16px;margin:0;background:#050a12}
+#scanModal .scan-modal video{width:100%;height:min(56dvh,500px);min-height:300px;flex:none;aspect-ratio:3/4;object-fit:cover;border-radius:16px;margin:0;background:#050a12}
 #scanModal .scan-hint{margin:15px auto 0;max-width:290px;line-height:1.5}
 .scanner-overlay{align-items:flex-end;padding:0;animation:sheetBackdropIn .28s var(--ease-fluid) both}
 .scanner-overlay section{width:100%;border-radius:20px 20px 0 0;animation:sheetUp .32s var(--ease-fluid) both;padding-bottom:calc(23px + env(safe-area-inset-bottom))}

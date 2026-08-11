@@ -696,13 +696,13 @@ if (scanBtn) {
 
     const lockScannerScroll = () => {
         scanScrollY = window.scrollY;
+        document.documentElement.classList.add('scanner-open');
         document.body.classList.add('scanner-open');
-        document.body.style.top = `-${scanScrollY}px`;
     };
 
     const unlockScannerScroll = () => {
+        document.documentElement.classList.remove('scanner-open');
         document.body.classList.remove('scanner-open');
-        document.body.style.top = '';
         window.scrollTo(0, scanScrollY);
     };
 
@@ -749,6 +749,7 @@ if (scanBtn) {
         try {
             scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             scanVideo.srcObject = scanStream;
+            await scanVideo.play().catch(() => {});
             const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'code_93', 'codabar', 'ean_13', 'ean_8', 'itf', 'pdf417', 'qr_code'] });
             scanRafId = requestAnimationFrame(() => scanFrame(detector));
         } catch (error) {
