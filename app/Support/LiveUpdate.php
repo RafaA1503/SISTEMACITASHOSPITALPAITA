@@ -37,14 +37,23 @@ class LiveUpdate
         // WebSockets (Reverb) no está disponible, la difusión en vivo a otras
         // pestañas es solo un extra — no debe tumbar la respuesta ni hacer
         // perder los cambios que sí se guardaron en la base de datos.
-        try {
-            broadcast(new RowUpdated($channel, $targets))->toOthers();
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        self::broadcast($channel, $targets, true);
 
         return $request->wantsJson()
             ? response()->json(['targets' => $targets])
             : null;
+    }
+
+    /** Difunde cambios iniciados por tareas automáticas, sin una petición HTTP. */
+    public static function broadcast(string $channel, array $targets, bool $exceptCurrentConnection = false): void
+    {
+        try {
+            $event = broadcast(new RowUpdated($channel, $targets));
+            if ($exceptCurrentConnection) {
+                $event->toOthers();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

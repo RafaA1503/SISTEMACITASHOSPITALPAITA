@@ -56,7 +56,6 @@ Route::middleware('auth')->group(function () {
         ->name('patients.appointments');
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
-    Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
     Route::get('/api/sesion/estado', [AuthController::class, 'sessionStatus'])->name('session.status');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');

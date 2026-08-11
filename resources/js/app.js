@@ -335,16 +335,18 @@ if (attendanceModal) {
     const attendanceYes = document.getElementById('attendanceModalYes');
     let pendingAttendanceForm = null;
     const closeAttendanceModal = () => { attendanceModal.hidden = true; pendingAttendanceForm = null; };
-    document.querySelectorAll('[data-attendance-action]').forEach(button => button.addEventListener('click', () => {
+    document.addEventListener('click', event => {
+        const button = event.target.closest('[data-attendance-action]');
+        if (!button) return;
         pendingAttendanceForm = document.getElementById(button.dataset.formTarget);
-        const isNoShow = button.dataset.attendanceAction === 'no-asistio';
-        attendanceTitle.textContent = isNoShow ? '¿Confirma que el paciente no asistió?' : '¿Desea tomar asistencia?';
-        attendanceYes.textContent = isNoShow ? 'Sí, marcar falta' : 'Sí, confirmar';
-        attendanceYes.classList.toggle('danger', isNoShow);
+        const isLateArrival = button.dataset.attendanceAction === 'tardanza';
+        attendanceTitle.textContent = isLateArrival ? '¿Registrar llegada tardía?' : '¿Desea tomar asistencia?';
+        attendanceYes.textContent = isLateArrival ? 'Sí, registrar tardanza' : 'Sí, confirmar';
+        attendanceYes.classList.remove('danger');
         attendanceName.textContent = button.dataset.patientName || '';
         attendanceSub.textContent = button.dataset.patientMeta || '';
         attendanceModal.hidden = false;
-    }));
+    });
     attendanceYes.addEventListener('click', () => { pendingAttendanceForm?.requestSubmit(); closeAttendanceModal(); });
     document.getElementById('attendanceModalNo')?.addEventListener('click', closeAttendanceModal);
     document.getElementById('attendanceModalClose')?.addEventListener('click', closeAttendanceModal);
@@ -763,6 +765,54 @@ if (scanBtn) {
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && !scanModal.hidden) stopScan();
     });
+}
+
+// Aviso de llegada de la hora de cita para Portería. Se genera con Web Audio
+// para no depender de archivos externos y se recuerda por cita para no repetirlo.
+const patientsTableBody = document.getElementById('patientsTableBody');
+if (patientsTableBody) {
+    let alertAudioContext = null;
+    const alertedAppointmentsKey = `hospital-alerted-appointments-${new Date().toISOString().slice(0, 10)}`;
+    const alertedAppointments = new Set(JSON.parse(localStorage.getItem(alertedAppointmentsKey) || '[]'));
+
+    const enableAppointmentSound = () => {
+        alertAudioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+        if (alertAudioContext.state === 'suspended') alertAudioContext.resume();
+    };
+
+    ['pointerdown', 'keydown'].forEach(eventName => document.addEventListener(eventName, enableAppointmentSound, { once: true }));
+
+    const playAppointmentAlert = () => {
+        if (!alertAudioContext || alertAudioContext.state !== 'running') return;
+        [0, 0.22].forEach((delay, index) => {
+            const oscillator = alertAudioContext.createOscillator();
+            const gain = alertAudioContext.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.value = index ? 880 : 660;
+            gain.gain.setValueAtTime(0.0001, alertAudioContext.currentTime + delay);
+            gain.gain.exponentialRampToValueAtTime(0.16, alertAudioContext.currentTime + delay + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, alertAudioContext.currentTime + delay + 0.18);
+            oscillator.connect(gain).connect(alertAudioContext.destination);
+            oscillator.start(alertAudioContext.currentTime + delay);
+            oscillator.stop(alertAudioContext.currentTime + delay + 0.2);
+        });
+    };
+
+    const checkAppointmentsDueNow = () => {
+        const now = Date.now();
+        patientsTableBody.querySelectorAll('tr[data-row-id][data-scheduled-at][data-status="programada"]').forEach(row => {
+            const scheduledAt = new Date(row.dataset.scheduledAt).getTime();
+            const appointmentId = row.dataset.rowId;
+            if (!Number.isFinite(scheduledAt) || alertedAppointments.has(appointmentId) || now < scheduledAt || now - scheduledAt > 60_000) return;
+            alertedAppointments.add(appointmentId);
+            localStorage.setItem(alertedAppointmentsKey, JSON.stringify([...alertedAppointments]));
+            playAppointmentAlert();
+            showModuleToast('Cita programada ahora', `${row.dataset.patientName} · ${row.dataset.serviceName}`);
+        });
+    };
+
+    checkAppointmentsDueNow();
+    setInterval(checkAppointmentsDueNow, 5_000);
 }
 
 document.getElementById('passkeyLogin')?.addEventListener('click',async()=>{

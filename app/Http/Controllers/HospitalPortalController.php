@@ -17,6 +17,7 @@ use Illuminate\View\View;
 class HospitalPortalController extends Controller
 {
     private const MODULES = ['portero','administrador'];
+    private const ATTENDANCE_GRACE_MINUTES = 20;
     /**
      * Una cita es visible tanto en Portería (siempre, dentro de su rango de
      * fecha) como en Atención profesional (solo si su estado ya es visible
@@ -33,7 +34,7 @@ class HospitalPortalController extends Controller
             'html' => $porteriaAction === 'deleted' ? null : view('portal.partials.patient-row', ['a' => $appointment])->render(),
         ]];
 
-        return LiveUpdate::respondMulti($request, 'portero', $targets);
+        return LiveUpdate::respondMulti($request, 'citas', $targets);
     }
 
     public function index(Request $request, ?string $role=null): View
@@ -120,7 +121,7 @@ class HospitalPortalController extends Controller
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
         $data=$request->validate(['access_point'=>'nullable|string|max:80']);
-        if ($appointment->status !== 'programada') return back()->withErrors('La cita ya fue confirmada o no está disponible.');
+        if (! in_array($appointment->status, ['programada', 'no_asistio'], true)) return back()->withErrors('La cita ya fue confirmada o no está disponible.');
         $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$data){
             $from=$appointment->status; $point=$data['access_point']??'Puerta principal';

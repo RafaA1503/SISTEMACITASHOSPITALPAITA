@@ -12,8 +12,6 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReportController extends Controller
 {
-    public const PUNCTUALITY_GRACE_MINUTES = 15;
-
     public function index(Request $request)
     {
         $this->authorizeAdmin($request);
@@ -71,7 +69,7 @@ class ReportController extends Controller
                 $punctuality = null;
                 if ($appointment->confirmed_at) {
                     $lateMinutes = max(0, intdiv($appointment->confirmed_at->timestamp - $appointment->scheduled_at->timestamp, 60));
-                    $punctuality = $lateMinutes > self::PUNCTUALITY_GRACE_MINUTES ? 'tardanza' : 'puntual';
+                    $punctuality = $lateMinutes > (int) config('hospital.attendance_grace_minutes', 20) ? 'tardanza' : 'puntual';
                 }
                 $appointment->late_minutes = $lateMinutes;
                 $appointment->punctuality = $punctuality;
