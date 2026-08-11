@@ -327,11 +327,11 @@ if (porterPanel) {
     const visitDemo = document.createElement('section');
     visitDemo.className = 'portal-panel visit-demo';
     visitDemo.innerHTML = `
-        <div class="panel-title"><div><h2>Visitas hospitalarias</h2><p>Demostracion: registra al familiar que visita a un paciente hospitalizado.</p></div><span class="secure-badge">Sin crear otro modulo</span></div>
+        <div class="panel-title"><div><h2>Visitas hospitalarias</h2><p>Demostracion: registra al familiar que visita a un paciente hospitalizado.</p></div></div>
         <div class="visit-demo-body">
             <div class="visit-patient"><span>PA</span><div><strong>Paciente hospitalizado de ejemplo</strong><small>Hospitalizacion · Cama 12 · Medicina</small></div><b>Atencion activa</b></div>
             <label class="visit-patient-select">Paciente hospitalizado<select id="visitPatientSelect"><option value="maria">Maria Flores Gomez · Cama 12 · Medicina</option><option value="carlos">Carlos Ruiz Chunga · Cama 08 · Cirugia</option><option value="ana">Ana Torres Vilela · Cama 04 · Pediatria</option></select></label>
-            <form id="visitDemoForm" class="visit-demo-form">
+            <form id="visitDemoForm" class="visit-demo-form" novalidate>
                 <label>Nombre del visitante<input name="name" required maxlength="100" placeholder="Nombres y apellidos"></label>
                 <label>DNI<input name="dni" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="8 digitos"></label>
                 <label>Parentesco<select name="relationship" required><option value="">Seleccionar</option><option>Madre / padre</option><option>Hijo(a)</option><option>Hermano(a)</option><option>Conyuge</option><option>Otro familiar</option></select></label>
@@ -345,7 +345,8 @@ if (porterPanel) {
     visitToggle.type = 'button';
     visitToggle.className = 'visit-minimize';
     visitToggle.setAttribute('aria-expanded', 'true');
-    visitToggle.textContent = 'Minimizar';
+    visitToggle.setAttribute('aria-label', 'Ocultar detalles de visitas hospitalarias');
+    visitToggle.innerHTML = '<span>Ocultar detalles</span><i>⌃</i>';
     visitTitle.appendChild(visitToggle);
     const visitContent = document.createElement('div');
     visitContent.className = 'visit-demo-content';
@@ -354,13 +355,35 @@ if (porterPanel) {
     visitToggle.addEventListener('click', () => {
         const minimized = !visitContent.hidden;
         visitContent.hidden = minimized;
-        visitToggle.textContent = minimized ? 'Mostrar visitas' : 'Minimizar';
+        visitToggle.innerHTML = minimized ? '<span>Mostrar detalles</span><i>⌄</i>' : '<span>Ocultar detalles</span><i>⌃</i>';
         visitToggle.setAttribute('aria-expanded', String(!minimized));
+        visitToggle.setAttribute('aria-label', minimized ? 'Mostrar detalles de visitas hospitalarias' : 'Ocultar detalles de visitas hospitalarias');
     });
     porterPanel.insertAdjacentElement('afterend', visitDemo);
     const visitForm = visitDemo.querySelector('#visitDemoForm');
+    const visitDniInput = visitForm.elements.dni;
     const visitRows = visitDemo.querySelector('#visitDemoRows');
     const visitEmpty = visitDemo.querySelector('#visitDemoEmpty');
+    const visitList = visitDemo.querySelector('.visit-demo-list');
+    const visitListHead = visitDemo.querySelector('.visit-demo-list-head');
+    const visitListToggle = document.createElement('button');
+    visitListToggle.type = 'button';
+    visitListToggle.className = 'visit-list-toggle';
+    visitListToggle.innerHTML = '⌃';
+    visitListToggle.title = 'Minimizar visitas registradas';
+    visitListToggle.setAttribute('aria-label', 'Minimizar visitas registradas');
+    visitListToggle.setAttribute('aria-expanded', 'true');
+    visitListHead.appendChild(visitListToggle);
+    visitListToggle.addEventListener('click', () => {
+        const minimized = !visitRows.hidden;
+        visitRows.hidden = minimized;
+        visitEmpty.hidden = minimized || visitRows.children.length !== 0;
+        visitList.classList.toggle('is-minimized', minimized);
+        visitListToggle.innerHTML = minimized ? '⌄' : '⌃';
+        visitListToggle.title = minimized ? 'Maximizar visitas registradas' : 'Minimizar visitas registradas';
+        visitListToggle.setAttribute('aria-label', visitListToggle.title);
+        visitListToggle.setAttribute('aria-expanded', String(!minimized));
+    });
     const visitPatientSelect = visitDemo.querySelector('#visitPatientSelect');
     const visitPatientCard = visitDemo.querySelector('.visit-patient');
     const hospitalPatients = {
@@ -368,6 +391,18 @@ if (porterPanel) {
         carlos: { initials: 'CR', name: 'Carlos Ruiz Chunga', detail: 'Hospitalizacion · Cama 08 · Cirugia' },
         ana: { initials: 'AT', name: 'Ana Torres Vilela', detail: 'Hospitalizacion · Cama 04 · Pediatria' },
     };
+    const validVisitorDni = value => {
+        const dni = String(value || '').replace(/[^0-9]/g, '');
+        return /^[0-9]{8}$/.test(dni) && !/^(\d)\1{7}$/.test(dni);
+    };
+    visitDniInput.addEventListener('input', () => {
+        const dni = visitDniInput.value.replace(/[^0-9]/g, '');
+        visitDniInput.value = dni;
+        const incomplete = dni.length < 8;
+        const valid = validVisitorDni(dni);
+        visitDniInput.setCustomValidity(incomplete || valid ? '' : 'Ingresa un DNI valido de 8 digitos.');
+        visitDniInput.classList.toggle('is-invalid', !incomplete && !valid);
+    });
     const updateVisitPatient = () => {
         const patient = hospitalPatients[visitPatientSelect.value];
         visitPatientCard.querySelector('span').textContent = patient.initials;
@@ -382,17 +417,39 @@ if (porterPanel) {
         const dni = String(values.get('dni') || '').replace(/[^0-9]/g, '');
         const relationship = String(values.get('relationship') || '').trim();
         const patient = hospitalPatients[visitPatientSelect.value];
-        if (!/^[0-9]{8}$/.test(dni)) { showModuleToast('DNI invalido', 'Ingresa los 8 digitos del visitante para continuar.'); return; }
+        if (!name) { showModuleToast('Nombre requerido', 'Ingresa el nombre completo del visitante.'); return; }
+        if (!validVisitorDni(dni)) { showModuleToast('DNI invalido', 'Ingresa un DNI valido de 8 digitos.'); return; }
+        if (!relationship) { showModuleToast('Parentesco requerido', 'Selecciona el parentesco del visitante.'); return; }
+        const activeVisit = [...visitRows.querySelectorAll('.visit-row:not(.visit-exited)')]
+            .find(row => row.dataset.visitorDni === dni);
+        if (activeVisit) {
+            showModuleToast('Visita duplicada', 'Este DNI ya tiene una visita activa. Registra su salida antes de ingresarlo nuevamente.');
+            activeVisit.classList.add('highlight-flash');
+            setTimeout(() => activeVisit.classList.remove('highlight-flash'), 1200);
+            return;
+        }
         visitForm.elements.dni.value = dni;
         const row = document.createElement('article');
         row.className = 'visit-row';
         row.innerHTML = `<div><strong>${escapeHtml(name)}</strong><small>DNI ${escapeHtml(dni)} · ${escapeHtml(relationship)}</small></div><time>Entrada ${new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}</time><button type="button">Registrar salida</button>`;
-        row.querySelector('button').addEventListener('click', () => { row.remove(); visitEmpty.hidden = visitRows.children.length !== 0; showModuleToast('Salida registrada', 'La visita de demostracion fue cerrada.'); });
+        row.querySelector('button').addEventListener('click', event => {
+            const exitButton = event.currentTarget;
+            if (row.dataset.exited) return;
+            row.dataset.exited = '1';
+            row.classList.add('visit-exited');
+            row.querySelector('time').textContent = `Salida ${new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}`;
+            exitButton.textContent = 'Salida registrada';
+            exitButton.disabled = true;
+            showModuleToast('Salida registrada', 'La salida del visitante fue registrada correctamente.');
+        });
         row.dataset.patient = visitPatientSelect.value;
+        row.dataset.visitorDni = dni;
         row.querySelector('small').textContent = `Visita a ${patient.name} · DNI ${dni} · ${relationship}`;
         visitRows.prepend(row);
         visitEmpty.hidden = true;
         visitForm.reset();
+        visitDniInput.setCustomValidity('');
+        visitDniInput.classList.remove('is-invalid');
         showModuleToast('Entrada registrada', 'El familiar aparece vinculado al paciente hospitalizado.');
     });
 }
@@ -407,19 +464,33 @@ const showModuleToast = (title = 'Acción completada', message = 'Los cambios se
     toast.querySelector('strong').textContent = title; toast.querySelector('p').textContent = message;
     toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2800);
 };
-let liveReloadPending = false;
-const reloadAfterLiveUpdate = (message = 'Se detectó una actualización. Recargando la información…') => {
-    if (liveReloadPending) return;
-    liveReloadPending = true;
-    sessionStorage.setItem('hospital-live-update-notice', message);
-    showModuleToast('Nueva actualización', message);
-    setTimeout(() => window.location.reload(), 900);
+let liveRefreshPending = false;
+// Actualiza solamente las zonas de datos del módulo. Así una cita nueva o editada
+// aparece sin reiniciar la página, perder filtros ni mostrar el preloader.
+const refreshPortalDataInPlace = async (message = 'La información se actualizó sin recargar la página.') => {
+    if (liveRefreshPending || !document.getElementById('patientsTableBody')) return;
+    liveRefreshPending = true;
+    try {
+        const response = await fetch(window.location.href, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+            credentials: 'same-origin',
+        });
+        if (!response.ok) throw new Error();
+        const updatedDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+        ['.portal-stats', '#patientsTableBody', '#patientsFilterEmpty'].forEach(selector => {
+            const current = document.querySelector(selector);
+            const updated = updatedDocument.querySelector(selector);
+            if (current && updated) current.outerHTML = updated.outerHTML;
+        });
+        document.dispatchEvent(new CustomEvent('appointments:changed'));
+        document.getElementById('patientsSearch')?.dispatchEvent(new Event('input'));
+        showModuleToast('Información actualizada', message);
+    } catch {
+        showModuleToast('Actualización pendiente', 'No se pudo sincronizar ahora. Se reintentará automáticamente.');
+    } finally {
+        liveRefreshPending = false;
+    }
 };
-const pendingLiveUpdateNotice = sessionStorage.getItem('hospital-live-update-notice');
-if (pendingLiveUpdateNotice) {
-    sessionStorage.removeItem('hospital-live-update-notice');
-    requestAnimationFrame(() => showModuleToast('Información actualizada', pendingLiveUpdateNotice));
-}
 document.querySelectorAll('.moduleAction').forEach(btn => btn.addEventListener('click', () => btn.dataset.url ? window.location.href = btn.dataset.url : showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.')));
 
 const attendanceModal = document.getElementById('attendanceModal');
@@ -761,7 +832,8 @@ if (document.getElementById('patientsTableBody')) {
             if (!response.ok) return;
             const { version } = await response.json();
             if (appointmentsVersion !== null && appointmentsVersion !== version) {
-                reloadAfterLiveUpdate('Se detectó un cambio en las citas. Actualizando la información…');
+                appointmentsVersion = version;
+                await refreshPortalDataInPlace('Se detectó un cambio en las citas.');
                 return;
             }
             appointmentsVersion = version;
@@ -773,12 +845,33 @@ if (document.getElementById('patientsTableBody')) {
 const notifBell = document.getElementById('notifBell');
 if (notifBell) {
     const notifBadge = document.getElementById('notifBadge');
-    const notifTarget = document.querySelector(notifBell.dataset.target);
-    notifBell.addEventListener('click', () => {
-        notifTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        notifTarget?.classList.add('highlight-flash');
-        setTimeout(() => notifTarget?.classList.remove('highlight-flash'), 1200);
+    const notificationsPanel = document.createElement('section');
+    notificationsPanel.className = 'notifications-popover';
+    notificationsPanel.hidden = true;
+    notificationsPanel.innerHTML = '<div class="notifications-head"><strong>Notificaciones</strong><button type="button" aria-label="Cerrar notificaciones">×</button></div><div class="notifications-body"><p>Cargando notificaciones...</p></div>';
+    notifBell.parentElement.appendChild(notificationsPanel);
+    const closeNotifications = () => { notificationsPanel.hidden = true; };
+    const renderNotifications = notifications => {
+        const body = notificationsPanel.querySelector('.notifications-body');
+        body.innerHTML = notifications.length
+            ? notifications.map(item => `<article><span>●</span><div><strong>${escapeHtml(item.patient)}</strong><small>${escapeHtml(item.service)} · ${escapeHtml(item.time)}</small></div></article>`).join('')
+            : '<p class="notifications-empty">No hay pacientes próximos por atender.</p>';
+    };
+    notifBell.addEventListener('click', async () => {
+        const isOpening = notificationsPanel.hidden;
+        notificationsPanel.hidden = !isOpening;
+        if (!isOpening) return;
+        try {
+            const response = await fetch('/api/portero/notificaciones', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+            if (!response.ok) throw new Error();
+            const payload = await response.json();
+            renderNotifications(payload.notifications || []);
+        } catch {
+            notificationsPanel.querySelector('.notifications-body').innerHTML = '<p class="notifications-empty">No se pudieron cargar las notificaciones.</p>';
+        }
     });
+    notificationsPanel.querySelector('button').addEventListener('click', closeNotifications);
+    document.addEventListener('click', event => { if (!event.target.closest('.notif-bell, .notifications-popover')) closeNotifications(); });
     let lastKnownCount = parseInt(notifBadge?.textContent || '0', 10);
     const pollPending = async () => {
         try {
@@ -792,7 +885,7 @@ if (notifBell) {
             if (count !== lastKnownCount) {
                 notifBell.classList.add('notif-pulse');
                 setTimeout(() => notifBell.classList.remove('notif-pulse'), 1500);
-                if (count > lastKnownCount) reloadAfterLiveUpdate('Hay cambios en las citas programadas. Actualizando la información…');
+                if (count > lastKnownCount) refreshPortalDataInPlace('Hay cambios en las citas programadas.');
                 lastKnownCount = count;
             }
         } catch { /* red intermitente: se reintenta en el siguiente ciclo */ }
@@ -945,7 +1038,8 @@ if (patientsTableBody) {
 
     const checkAppointmentsDueNow = () => {
         const now = Date.now();
-        patientsTableBody.querySelectorAll('tr[data-row-id][data-scheduled-at][data-status="programada"]').forEach(row => {
+        // El cuerpo de la tabla puede reemplazarse durante una sincronización en vivo.
+        document.getElementById('patientsTableBody')?.querySelectorAll('tr[data-row-id][data-scheduled-at][data-status="programada"]').forEach(row => {
             const scheduledAt = new Date(row.dataset.scheduledAt).getTime();
             const appointmentId = row.dataset.rowId;
             if (!Number.isFinite(scheduledAt) || alertedAppointments.has(appointmentId) || now < scheduledAt || now - scheduledAt > 60_000) return;
@@ -1141,7 +1235,8 @@ if (scheduleForm) {
 if (window.Echo) {
     const onRowUpdated = data => {
         (data.targets || []).forEach(applyRowUpdate);
-        reloadAfterLiveUpdate();
+        if ((data.targets || []).length) showModuleToast('Información actualizada', 'Los cambios se aplicaron en tiempo real.');
+        else refreshPortalDataInPlace('Se recibió una actualización en tiempo real.');
     };
     if (document.getElementById('patientsTableBody') || document.getElementById('serviceTableBody')) {
         window.Echo.private('citas').listen('.row.updated', onRowUpdated);

@@ -169,6 +169,26 @@ class HospitalPortalController extends Controller
         return response()->json(['count'=>$count]);
     }
 
+    public function pendingNotifications(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+
+        $appointments = Appointment::with(['patient', 'type.service'])
+            ->whereDate('scheduled_at', today())
+            ->where('status', 'programada')
+            ->whereBetween('scheduled_at', [now(), now()->addMinutes(60)])
+            ->orderBy('scheduled_at')
+            ->get()
+            ->map(fn (Appointment $appointment) => [
+                'id' => $appointment->id,
+                'patient' => $appointment->patient?->full_name ?? 'Paciente sin nombre',
+                'service' => $appointment->type?->service?->name ?? 'Servicio no definido',
+                'time' => $appointment->scheduled_at->format('H:i'),
+            ]);
+
+        return response()->json(['count' => $appointments->count(), 'notifications' => $appointments]);
+    }
+
     /** Huella liviana para que Portería refresque la agenda al cambiar en otro módulo. */
     public function appointmentsVersion(Request $request): JsonResponse
     {
