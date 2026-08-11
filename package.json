@@ -16,6 +16,12 @@
         "vite": "^6.0.11"
     },
     "dependencies": {
-        "@laravel/passkeys": "^0.2.0"
+        "@angular/common": "^22.1.1",
+        "@angular/compiler": "^22.1.1",
+        "@angular/core": "^22.1.1",
+        "@angular/platform-browser": "^22.1.1",
+        "@laravel/passkeys": "^0.2.0",
+        "rxjs": "^7.8.2",
+        "zone.js": "^0.16.2"
     }
 }

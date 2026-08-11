@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
+    Route::get('/api/portero/citas-version', [HospitalPortalController::class, 'appointmentsVersion'])->name('portero.appointments_version');
     Route::get('/api/sesion/estado', [AuthController::class, 'sessionStatus'])->name('session.status');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
     Route::get('/administracion/reportes/excel', [ReportController::class, 'exportExcel'])->name('admin.reports.excel');

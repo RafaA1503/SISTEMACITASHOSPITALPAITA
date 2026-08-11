@@ -1,6 +1,9 @@
 import './bootstrap';
 import { Passkeys } from '@laravel/passkeys';
 
+// Angular se descarga solo en Portería; los demás módulos no cargan su peso.
+if (document.querySelector('.porter-search')) import('./angular/patient-access');
+
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const normalizeSearch = value => String(value ?? '').toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -325,6 +328,11 @@ const showModuleToast = (title = 'Acción completada', message = 'Los cambios se
     toast.querySelector('strong').textContent = title; toast.querySelector('p').textContent = message;
     toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2800);
 };
+const pendingLiveUpdateNotice = sessionStorage.getItem('hospital-live-update-notice');
+if (pendingLiveUpdateNotice) {
+    sessionStorage.removeItem('hospital-live-update-notice');
+    requestAnimationFrame(() => showModuleToast('Información actualizada', pendingLiveUpdateNotice));
+}
 document.querySelectorAll('.moduleAction').forEach(btn => btn.addEventListener('click', () => btn.dataset.url ? window.location.href = btn.dataset.url : showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.')));
 
 const attendanceModal = document.getElementById('attendanceModal');
@@ -553,7 +561,8 @@ document.addEventListener('keydown', event => {
 // el menú hacia la izquierda lo cierra (patrón de "drawer" fluido en móvil).
 if (roleSidebarEl) {
     let touchStartX = 0, touchStartY = 0, tracking = false, fromEdge = false;
-    const EDGE = 24, THRESHOLD = 60;
+    // Zona amplia para que sea cómodo en teléfonos, sin interceptar el scroll vertical.
+    const EDGE = 72, THRESHOLD = 45;
     document.addEventListener('touchstart', event => {
         if (window.innerWidth > 760 || event.touches.length !== 1) return;
         const x = event.touches[0].clientX;
@@ -615,14 +624,30 @@ document.addEventListener('click', event => {
         userMenuButton?.setAttribute('aria-expanded', 'false');
     }
 });
-document.getElementById('patientsDateFilter')?.addEventListener('change', event => event.currentTarget.requestSubmit());
+const patientsDateFilter = document.getElementById('patientsDateFilter');
+if (patientsDateFilter) {
+    let dateFilterTimer;
+    const submitDateFilter = () => patientsDateFilter.requestSubmit();
+    patientsDateFilter.addEventListener('change', submitDateFilter);
+    patientsDateFilter.addEventListener('input', () => {
+        clearTimeout(dateFilterTimer);
+        dateFilterTimer = setTimeout(submitDateFilter, 350);
+    });
+    if (!patientsDateFilter.querySelector('[data-apply-dates]')) {
+        const applyDatesButton = document.createElement('button');
+        applyDatesButton.type = 'submit';
+        applyDatesButton.dataset.applyDates = '1';
+        applyDatesButton.textContent = 'Aplicar fechas';
+        patientsDateFilter.appendChild(applyDatesButton);
+    }
+}
 const patientsSearch = document.getElementById('patientsSearch');
 if (patientsSearch) {
     const patientsServiceFilter = document.getElementById('patientsServiceFilter');
     const patientsStatusFilter = document.getElementById('patientsStatusFilter');
-    const patientsRows = [...document.querySelectorAll('#patientsTableBody tr[data-search]')];
     const patientsEmpty = document.getElementById('patientsFilterEmpty');
     const applyPatientFilters = () => {
+        const patientsRows = [...document.querySelectorAll('#patientsTableBody tr[data-search]')];
         const term = patientsSearch.value.trim().toLocaleLowerCase('es');
         const service = patientsServiceFilter.value;
         const status = patientsStatusFilter.value;
@@ -637,6 +662,29 @@ if (patientsSearch) {
     patientsSearch.addEventListener('input', applyPatientFilters);
     patientsServiceFilter.addEventListener('change', applyPatientFilters);
     patientsStatusFilter.addEventListener('change', applyPatientFilters);
+}
+if (document.getElementById('patientsTableBody')) {
+    let appointmentsVersion = null;
+    const appointmentsVersionUrl = new URL('/api/portero/citas-version', window.location.origin);
+    const range = new URLSearchParams(window.location.search);
+    ['from', 'to'].forEach(key => { if (range.has(key)) appointmentsVersionUrl.searchParams.set(key, range.get(key)); });
+    const refreshAppointmentsWhenChanged = async () => {
+        try {
+            const response = await fetch(appointmentsVersionUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+            if (!response.ok) return;
+            const { version } = await response.json();
+            if (appointmentsVersion !== null && appointmentsVersion !== version) {
+                const message = 'Se detectó un cambio en las citas. Actualizando la información…';
+                sessionStorage.setItem('hospital-live-update-notice', message);
+                showModuleToast('Nueva actualización', message);
+                setTimeout(() => window.location.reload(), 900);
+                return;
+            }
+            appointmentsVersion = version;
+        } catch { /* La consulta manual seguirá disponible si no hay conexión. */ }
+    };
+    refreshAppointmentsWhenChanged();
+    setInterval(refreshAppointmentsWhenChanged, 5000);
 }
 const notifBell = document.getElementById('notifBell');
 if (notifBell) {
@@ -669,6 +717,7 @@ if (notifBell) {
 }
 document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
+    if (button.disabled) return;
     if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
     button.disabled=true;button.textContent='Buscando...';
     result.hidden=false;
@@ -686,9 +735,19 @@ document.getElementById('portalDni')?.addEventListener('input', event => {
 document.getElementById('portalDni')?.addEventListener('keydown', event => {
     if(event.key === 'Enter'){ event.preventDefault(); document.getElementById('portalSearch')?.click(); }
 });
+document.addEventListener('appointments:changed', () => {
+    const dni = document.getElementById('portalDni');
+    const result = document.getElementById('portalPatientResult');
+    if (dni?.value.length === 8 && result && !result.hidden) document.getElementById('portalSearch')?.click();
+});
+setInterval(() => {
+    const dni = document.getElementById('portalDni');
+    const result = document.getElementById('portalPatientResult');
+    if (dni?.value.length === 8 && result && !result.hidden) document.getElementById('portalSearch')?.click();
+}, 5000);
 
-const scanBtn = document.getElementById('portalScanBtn');
-if (scanBtn) {
+const scanModalElement = document.getElementById('scanModal');
+if (scanModalElement) {
     const scanModal = document.getElementById('scanModal');
     const scanVideo = document.getElementById('scanVideo');
     const scanHint = document.getElementById('scanHint');
@@ -759,7 +818,9 @@ if (scanBtn) {
         }
     };
 
-    scanBtn.addEventListener('click', startScan);
+    document.addEventListener('click', event => {
+        if (event.target.closest('#portalScanBtn')) startScan();
+    });
     document.getElementById('scanModalClose')?.addEventListener('click', stopScan);
     scanModal.addEventListener('click', event => { if (event.target === scanModal) stopScan(); });
     document.addEventListener('keydown', event => {
@@ -880,6 +941,7 @@ function applyRowUpdate({ selector, action, id, html }) {
             if (![...select.options].some(option => option.value === String(id))) select.add(new Option(roleName, String(id)));
         });
     }
+    if (selector === '#patientsTableBody') document.dispatchEvent(new CustomEvent('appointments:changed'));
 }
 
 // --- Envío de formularios por fetch, sin recargar la página ---

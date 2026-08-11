@@ -44,8 +44,8 @@ class HospitalPortalController extends Controller
         abort_unless(in_array($role,self::MODULES,true),404);
         abort_unless($user->canAccessModule($role),403,'No tiene permiso para acceder a este módulo.');
 
-        $dateFrom=$role==='portero'&&$request->date('from')?$request->date('from'):today();
-        $dateTo=$role==='portero'&&$request->date('to')?$request->date('to'):today();
+        $dateFrom=$role==='portero'?$this->portalDate($request->input('from')):today();
+        $dateTo=$role==='portero'?$this->portalDate($request->input('to')):today();
         if($dateTo->lessThan($dateFrom)) $dateTo=$dateFrom->copy();
 
         $query=Appointment::with(['patient','type.service','area','subarea'])->orderBy('scheduled_at');
@@ -59,6 +59,13 @@ class HospitalPortalController extends Controller
         $metrics=['citas_hoy'=>Appointment::whereDate('scheduled_at',today())->count(),'confirmadas'=>Appointment::whereDate('scheduled_at',today())->where('status','confirmada')->count(),'ingresos'=>DB::table('access_logs')->whereDate('registered_at',today())->where('movement','ingreso')->count(),'pendientes'=>Appointment::whereDate('scheduled_at',today())->where('status','programada')->count()];
         $upcoming=$role==='portero'?Appointment::with(['patient','type.service'])->whereDate('scheduled_at',today())->where('status','programada')->whereBetween('scheduled_at',[now(),now()->addMinutes(60)])->orderBy('scheduled_at')->get():collect();
         return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo'));
+    }
+
+    private function portalDate(?string $date): \Illuminate\Support\Carbon
+    {
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)
+            ? \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $date)->startOfDay()
+            : today();
     }
 
     /** Profesionales con un servicio ya asignado (vía trabajador) — para el selector de citas. */
@@ -160,6 +167,25 @@ class HospitalPortalController extends Controller
         abort_unless($request->user()->canAccessModule('portero'),403);
         $count=Appointment::whereDate('scheduled_at',today())->where('status','programada')->where('scheduled_at','<=',now()->addMinutes(60))->count();
         return response()->json(['count'=>$count]);
+    }
+
+    /** Huella liviana para que Portería refresque la agenda al cambiar en otro módulo. */
+    public function appointmentsVersion(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+
+        $from = $this->portalDate($request->input('from'));
+        $to = $this->portalDate($request->input('to'));
+        if ($to->lessThan($from)) $to = $from->copy();
+
+        $summary = Appointment::query()
+            ->whereBetween('scheduled_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+            ->selectRaw("COUNT(*) as total, COALESCE(MAX(id), 0) as last_id, COALESCE(MAX(updated_at), '1970-01-01 00:00:00') as last_change")
+            ->first();
+
+        return response()->json([
+            'version' => implode(':', [$summary->total, $summary->last_id, $summary->last_change]),
+        ]);
     }
 
     public function completeAppointment(Request $request, Appointment $appointment)
