@@ -597,6 +597,10 @@ if (porterPanel) {
     };
     visitPatientSelect.addEventListener('change', updateVisitPatient);
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    // Evita que un refresco de la lista (ej. al cambiar de paciente) reemplace
+    // una fila cuya salida ya está en camino por una fresca y reactivada,
+    // lo que permitiría un segundo clic real disparando una petición duplicada.
+    const checkoutInFlight = new Set();
     const filterHospitalVisits = () => {
         const patient = hospitalPatients[visitPatientSelect.value];
         if (!patient) return;
@@ -611,18 +615,22 @@ if (porterPanel) {
     const renderHospitalVisit = visit => {
         const row = document.createElement('article');
         const hasExited = Boolean(visit.checked_out_at);
+        const pending = checkoutInFlight.has(visit.id);
         row.className = `visit-row${hasExited ? ' visit-exited' : ''}`;
         row.dataset.logId = String(visit.id);
         row.dataset.visitorDni = visit.visitor_dni;
         row.dataset.patientLabel = visit.patient_label;
+        if (pending) row.dataset.exited = '1'; // bloquea nuevos clics mientras la salida sigue en camino
         const entryTime = new Date(visit.registered_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
         const exitTime = hasExited ? new Date(visit.checked_out_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
-        row.innerHTML = `<div><strong>${escapeHtml(visit.visitor_name)}</strong><small>Visita a ${escapeHtml(visit.patient_label)} · DNI ${escapeHtml(visit.visitor_dni)} · ${escapeHtml(visit.relationship)}</small></div><time>${hasExited ? `Salida ${exitTime}` : `Entrada ${entryTime}`}</time><button type="button" ${hasExited ? 'disabled' : ''}>${hasExited ? 'Salida registrada' : 'Registrar salida'}</button>`;
+        const buttonLabel = hasExited ? 'Salida registrada' : (pending ? 'Guardando...' : 'Registrar salida');
+        row.innerHTML = `<div><strong>${escapeHtml(visit.visitor_name)}</strong><small>Visita a ${escapeHtml(visit.patient_label)} · DNI ${escapeHtml(visit.visitor_dni)} · ${escapeHtml(visit.relationship)}</small></div><time>${hasExited ? `Salida ${exitTime}` : `Entrada ${entryTime}`}</time><button type="button" ${hasExited || pending ? 'disabled' : ''}>${buttonLabel}</button>`;
         row.querySelector('time').innerHTML = `<span>Entrada ${entryTime}</span><span data-visit-exit>${exitTime ? `Salida ${exitTime}` : 'Salida pendiente'}</span>`;
         row.querySelector('button').addEventListener('click', async event => {
             const exitButton = event.currentTarget;
             if (row.dataset.exited || exitButton.disabled) return;
             exitButton.disabled = true;
+            checkoutInFlight.add(visit.id);
             try {
                 const response = await fetch(`/api/visitas-hospitalarias/${row.dataset.logId}/salida`, { method: 'PUT', credentials: 'same-origin', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken } });
                 const payload = await response.json();
@@ -631,7 +639,25 @@ if (porterPanel) {
                 row.querySelector('[data-visit-exit]').textContent = `Salida ${new Date(payload.visit.checked_out_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
                 exitButton.textContent = 'Salida registrada';
                 showModuleToast('Salida registrada', 'La salida del visitante fue guardada en el sistema.');
-            } catch (error) { exitButton.disabled = false; showModuleToast('No se registró la salida', error.message || 'Inténtalo nuevamente.'); }
+            } catch (error) {
+                // Si dos clics (propios o de otra persona en otra pantalla) llegan casi
+                // a la vez, el primero sí registra la salida y el segundo choca con esta
+                // validación — no es un fallo real, así que no debe verse como un error.
+                if (/ya fue registrada/i.test(error.message || '')) {
+                    row.dataset.exited = '1'; row.classList.add('visit-exited');
+                    row.querySelector('[data-visit-exit]').textContent = 'Salida ya registrada';
+                    exitButton.textContent = 'Salida registrada';
+                    exitButton.disabled = true;
+                    showModuleToast('Ya estaba registrada', 'La salida de este visitante ya se había guardado. No hace falta repetirla.');
+                } else {
+                    row.dataset.exited = '';
+                    exitButton.disabled = false;
+                    exitButton.textContent = 'Registrar salida';
+                    showModuleToast('No se registró la salida', error.message || 'Inténtalo nuevamente.');
+                }
+            } finally {
+                checkoutInFlight.delete(visit.id);
+            }
         });
         visitRows.prepend(row); filterHospitalVisits();
     };
