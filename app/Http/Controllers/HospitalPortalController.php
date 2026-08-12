@@ -364,10 +364,12 @@ class HospitalPortalController extends Controller
         abort_unless($request->user()->canAccessModule('portero'), 403);
         $data = $request->validate([
             'patient_label' => 'required|string|max:160',
-            'visitor_name' => 'required|string|max:100',
+            'visitor_name' => ['required', 'string', 'max:100', 'regex:/^[\p{L}\s\'.-]+$/u'],
             'visitor_dni' => ['required', 'digits:8'],
             'relationship' => 'required|string|max:60',
             'entry_time' => 'nullable|date_format:H:i',
+        ], [
+            'visitor_name.regex' => 'El nombre solo puede tener letras y espacios, sin números ni símbolos.',
         ]);
 
         $visitorPatient = Patient::where('NroDocumento', $data['visitor_dni'])->first();

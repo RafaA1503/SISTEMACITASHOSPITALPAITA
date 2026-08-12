@@ -1,0 +1,40 @@
+{
+    "name": "Hospital Nuestra Señora de las Mercedes",
+    "short_name": "HNSM Portería",
+    "description": "Control de acceso de pacientes, visitas y administración del hospital.",
+    "start_url": "/portal",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#0c3188",
+    "theme_color": "#0c3188",
+    "icons": [
+        { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+        { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    ],
+    "shortcuts": [
+        {
+            "name": "Control de Acceso",
+            "short_name": "Acceso",
+            "description": "Confirmar llegadas y visitas hospitalarias",
+            "url": "/portal/portero",
+            "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Administración",
+            "short_name": "Admin",
+            "description": "Servicios, roles y usuarios",
+            "url": "/portal/administrador",
+            "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Reportes",
+            "short_name": "Reportes",
+            "description": "Asistencias, faltas y puntualidad",
+            "url": "/administracion/reportes",
+            "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+        }
+    ]
+}

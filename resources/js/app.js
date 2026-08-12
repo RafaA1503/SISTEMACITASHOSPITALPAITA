@@ -1,26 +1,30 @@
 import './bootstrap';
 import { Passkeys } from '@laravel/passkeys';
 
-// Desactivado por ahora: Angular se compila aquí en modo JIT (usa eval() para
-// compilar sus plantillas en el navegador), y la Content-Security-Policy del
-// sitio (ver SecurityHeaders::handle) bloquea eval() a propósito — es una
-// protección real contra XSS, no un descuido. Mientras eso sea así, este
-// import SIEMPRE falla: solo gasta ~1MB de descarga y deja un error en
-// consola en cada carga de Portería/Administración, sin aportar nada.
-// Para reactivarlo hay dos caminos, ninguno trivial:
-//  1) Compilar Angular en modo AOT (sin eval) — requiere integrar el
-//     compilador de Angular con Vite en vez de solo importar el paquete.
-//  2) Agregar 'unsafe-eval' al script-src del CSP — funciona, pero debilita
-//     la protección XSS de todo el sitio, no solo de este componente.
-// if (document.querySelector('.porter-search')) import('./angular/patient-access');
-// if (document.querySelector('.quick-actions')) import('./angular/admin-dashboard');
-
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const normalizeSearch = value => String(value ?? '').toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-// Convierte un <select> con muchas opciones en un combo con buscador, sin tocar
-// el <select> original (sigue enviándose igual en el formulario y respeta
-// required/validación nativa; solo se oculta visualmente).
+// Deslizar hacia abajo cierra una hoja/panel móvil (bottom sheet), como el
+// gesto nativo de Android — solo si el toque empieza cerca del borde superior,
+// para no interferir con el scroll normal del contenido de la hoja.
+function enableSwipeToDismiss(sheet, dismiss) {
+    if (!sheet) return;
+    let startY = 0, tracking = false;
+    sheet.addEventListener('touchstart', event => {
+        if (window.innerWidth > 760 || event.touches.length !== 1) return;
+        const rect = sheet.getBoundingClientRect();
+        if (event.touches[0].clientY - rect.top > 60) return;
+        startY = event.touches[0].clientY;
+        tracking = true;
+    }, { passive: true });
+    sheet.addEventListener('touchend', event => {
+        if (!tracking) return;
+        tracking = false;
+        const dy = (event.changedTouches[0]?.clientY ?? startY) - startY;
+        if (dy > 70) dismiss();
+    }, { passive: true });
+}
+
 function enhanceSelect(select) {
     if (select.dataset.comboEnhanced || select.multiple || select.options.length < 8) return;
     select.dataset.comboEnhanced = '1';
@@ -502,6 +506,15 @@ if (porterPanel) {
     visitorNameInput.readOnly = false;
     visitorNameInput.setAttribute('aria-readonly', 'false');
     visitorNameInput.placeholder = 'Nombres y apellidos del visitante';
+    // Solo letras (con tildes/ñ), espacios, apóstrofos, puntos y guiones — nada de
+    // números ni símbolos raros, para que no se cuele un DNI o un código por error.
+    const VISITOR_NAME_INVALID_CHARS = /[^A-Za-zÁÉÍÓÚÑÜáéíóúñü\s'.-]/g;
+    visitorNameInput.setAttribute('pattern', "[A-Za-zÁÉÍÓÚÑÜáéíóúñü\\s'.-]+");
+    visitorNameInput.setAttribute('title', 'Solo letras y espacios, sin números ni símbolos.');
+    visitorNameInput.addEventListener('input', () => {
+        const sanitized = visitorNameInput.value.replace(VISITOR_NAME_INVALID_CHARS, '');
+        if (sanitized !== visitorNameInput.value) visitorNameInput.value = sanitized;
+    });
     const resetVisitorIdentity = () => {
         resolvedVisitorDni = '';
         if (!manualVisitorEntry) visitorNameInput.value = '';
@@ -713,6 +726,7 @@ if (porterPanel) {
         if (!patient) { showModuleToast('Paciente requerido', 'Selecciona un paciente hospitalizado activo.'); return; }
         if (!validVisitorDni(dni)) { showModuleToast('DNI invalido', 'Ingresa un DNI valido de 8 digitos.'); return; }
         if (!name || (!manualVisitorEntry && resolvedVisitorDni !== dni)) { showModuleToast('Identidad pendiente', manualVisitorEntry ? 'Ingresa el nombre completo del visitante.' : 'Espera la consulta RENIEC antes de registrar la visita.'); return; }
+        if (!/^[A-Za-zÁÉÍÓÚÑÜáéíóúñü\s'.-]+$/.test(name)) { showModuleToast('Nombre inválido', 'El nombre solo puede tener letras y espacios, sin números ni símbolos.'); return; }
         if (!relationship) { showModuleToast('Parentesco requerido', 'Selecciona el parentesco del visitante.'); return; }
         const activeVisit = [...visitRows.querySelectorAll('.visit-row:not(.visit-exited)')]
             .find(row => row.dataset.visitorDni === dni);
@@ -841,6 +855,7 @@ if (attendanceModal) {
     document.getElementById('attendanceModalNo')?.addEventListener('click', closeAttendanceModal);
     document.getElementById('attendanceModalClose')?.addEventListener('click', closeAttendanceModal);
     attendanceModal.addEventListener('click', event => { if (event.target === attendanceModal) closeAttendanceModal(); });
+    enableSwipeToDismiss(attendanceModal.querySelector('.modal'), closeAttendanceModal);
 }
 document.getElementById('patientButton')?.addEventListener('click', () => {
     document.getElementById('patientResult')?.classList.add('visible');
@@ -1106,6 +1121,11 @@ document.addEventListener('click', event => {
         userMenuButton?.setAttribute('aria-expanded', 'false');
     }
 });
+enableSwipeToDismiss(userDropdown, () => {
+    if (!userDropdown || userDropdown.hidden) return;
+    userDropdown.hidden = true;
+    userMenuButton?.setAttribute('aria-expanded', 'false');
+});
 const patientsDateFilter = document.getElementById('patientsDateFilter');
 if (patientsDateFilter) {
     let dateFilterTimer;
@@ -1181,19 +1201,26 @@ if (notifBell) {
             ? notifications.map(item => `<article><span>●</span><div><strong>${escapeHtml(item.patient)}</strong><small>${escapeHtml(item.service)} · ${escapeHtml(item.time)}</small></div></article>`).join('')
             : '<p class="notifications-empty">No hay pacientes próximos por atender.</p>';
     };
-    notifBell.addEventListener('click', async () => {
+    // Se mantiene precargado desde el mismo sondeo de 20s de la campana, para
+    // que abrir el panel se sienta instantáneo en vez de esperar un fetch.
+    let cachedNotifications = null;
+    const refreshNotificationsCache = async () => {
+        try {
+            const response = await fetch('/api/portero/notificaciones', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+            if (!response.ok) return;
+            const payload = await response.json();
+            cachedNotifications = payload.notifications || [];
+            if (!notificationsPanel.hidden) renderNotifications(cachedNotifications);
+        } catch { /* se reintenta en el siguiente ciclo */ }
+    };
+    notifBell.addEventListener('click', () => {
         const isOpening = notificationsPanel.hidden;
         notificationsPanel.hidden = !isOpening;
         if (!isOpening) return;
-        try {
-            const response = await fetch('/api/portero/notificaciones', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-            if (!response.ok) throw new Error();
-            const payload = await response.json();
-            renderNotifications(payload.notifications || []);
-        } catch {
-            notificationsPanel.querySelector('.notifications-body').innerHTML = '<p class="notifications-empty">No se pudieron cargar las notificaciones.</p>';
-        }
+        if (cachedNotifications) renderNotifications(cachedNotifications); // instantáneo con lo último en caché
+        refreshNotificationsCache(); // y se refresca en silencio por si cambió algo
     });
+    refreshNotificationsCache();
     notificationsPanel.querySelector('button').addEventListener('click', closeNotifications);
     document.addEventListener('click', event => { if (!event.target.closest('.notif-bell, .notifications-popover')) closeNotifications(); });
     let lastKnownCount = parseInt(notifBadge?.textContent || '0', 10);
@@ -1211,6 +1238,7 @@ if (notifBell) {
                 setTimeout(() => notifBell.classList.remove('notif-pulse'), 1500);
                 if (count > lastKnownCount) refreshPortalDataInPlace('Hay cambios en las citas programadas.');
                 lastKnownCount = count;
+                refreshNotificationsCache();
             }
         } catch { /* red intermitente: se reintenta en el siguiente ciclo */ }
     };
@@ -1327,6 +1355,7 @@ if (scanModalElement) {
     }, true);
     document.getElementById('scanModalClose')?.addEventListener('click', stopScan);
     scanModal.addEventListener('click', event => { if (event.target === scanModal) stopScan(); });
+    enableSwipeToDismiss(scanModal.querySelector('.modal'), stopScan);
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && !scanModal.hidden) stopScan();
     });
@@ -1579,10 +1608,6 @@ if (window.Echo) {
     }
 }
 
-// --- Cierre forzado de sesión: si la contraseña cambió (desde este mismo
-// dispositivo en otra pestaña, o porque un admin la restablece a futuro), el
-// resto de sesiones abiertas se enteran en el siguiente sondeo y salen solas
-// en vez de seguir "adentro" con una contraseña que ya no es válida.
 if (document.querySelector('form[action$="/logout"]')) {
     const checkSessionStatus = async () => {
         try {
@@ -1595,4 +1620,10 @@ if (document.querySelector('form[action$="/logout"]')) {
         } catch { /* sin conexión: se reintenta en el siguiente sondeo */ }
     };
     const sessionStatusTimer = setInterval(checkSessionStatus, 20000);
+}
+
+// Registro del service worker mínimo: habilita instalar la app y los atajos
+// del ícono en Android. No cachea nada (ver public/sw.js).
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }

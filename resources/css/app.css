@@ -250,3 +250,16 @@ html[data-theme=dark] .combo-option.active,html[data-theme=dark] .combo-option:h
 .confirm-modal-accept{border:1px solid var(--red);background:var(--red);color:#fff}
 .confirm-modal-accept:hover{background:#c73a3a}
 @media(max-width:600px){.confirm-modal{padding-bottom:calc(24px + env(safe-area-inset-bottom))}}
+
+/* Atajos del panel admin: ícono en su propia burbuja + entrada escalonada */
+.quick-actions button{display:flex;align-items:center;gap:13px;text-align:left}
+.quick-actions .quick-icon{width:38px;height:38px;flex:none;border-radius:11px;background:#ffffff20;display:grid;place-items:center;font-size:17px;transition:transform .18s var(--ease-fluid,ease)}
+.quick-actions button:active .quick-icon{transform:scale(.88) rotate(-4deg)}
+.quick-actions .quick-copy{display:block;min-width:0}
+.quick-actions button{animation:quickActionIn .38s var(--ease-fluid,ease) both}
+.quick-actions button:nth-child(1){animation-delay:.03s}
+.quick-actions button:nth-child(2){animation-delay:.09s}
+.quick-actions button:nth-child(3){animation-delay:.15s}
+.quick-actions button:nth-child(4){animation-delay:.21s}
+@keyframes quickActionIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@media(hover:none){.quick-actions button:active{filter:brightness(1.12)}}
