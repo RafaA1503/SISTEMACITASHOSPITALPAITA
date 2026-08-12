@@ -7,7 +7,7 @@
  @vite(['resources/css/app.css','resources/js/app.js'])
 </head>
 <body><div class="settings-page"><header>
- <a href="{{ route('portal',$user->role) }}">← Volver al portal</a><strong>Configuración de cuenta</strong>
+ <a href="{{ route('portal',$user->defaultModule()) }}">← Volver al portal</a><strong>Configuración de cuenta</strong>
  <form method="POST" action="{{ route('logout') }}">@csrf<button>Cerrar sesión</button></form>
 </header><main>
  @if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif

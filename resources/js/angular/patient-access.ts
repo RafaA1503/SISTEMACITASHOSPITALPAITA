@@ -94,6 +94,12 @@ const legacyPanel = document.querySelector('.porter-search');
 if (legacyPanel) {
     const host = document.createElement('hospital-patient-access');
     host.id = 'angularPatientSearch';
-    legacyPanel.replaceWith(host);
-    bootstrapApplication(PatientAccessComponent).catch(error => console.error('No se pudo iniciar el módulo Angular de pacientes.', error));
+    // Solo se reemplaza el panel original (con el DNI, el botón de escanear y
+    // "Buscar citas" ya funcionando) si Angular realmente logra iniciar. Si el
+    // bootstrap falla — como pasa hoy porque el CSP bloquea eval() y Angular
+    // necesita el compilador JIT — el panel original se queda intacto en vez
+    // de desaparecer y dejar la búsqueda de pacientes sin nada funcional.
+    bootstrapApplication(PatientAccessComponent)
+        .then(() => legacyPanel.replaceWith(host))
+        .catch(error => console.error('No se pudo iniciar el módulo Angular de pacientes; se mantiene el panel original.', error));
 }

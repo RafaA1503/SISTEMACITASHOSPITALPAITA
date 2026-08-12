@@ -11,7 +11,9 @@ use App\Models\User;
 use App\Support\LiveUpdate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 class HospitalPortalController extends Controller
@@ -41,6 +43,7 @@ class HospitalPortalController extends Controller
     {
         $user=$request->user();
         $role ??= $user->defaultModule();
+        $this->markExpiredAppointments();
         abort_unless(in_array($role,self::MODULES,true),404);
         abort_unless($user->canAccessModule($role),403,'No tiene permiso para acceder a este módulo.');
 
@@ -58,7 +61,32 @@ class HospitalPortalController extends Controller
         $services=Service::where('active',true)->with(['appointmentTypes'=>fn($q)=>$q->where('active',true)])->orderBy('name')->get();
         $metrics=['citas_hoy'=>Appointment::whereDate('scheduled_at',today())->count(),'confirmadas'=>Appointment::whereDate('scheduled_at',today())->where('status','confirmada')->count(),'ingresos'=>DB::table('access_logs')->whereDate('registered_at',today())->where('movement','ingreso')->count(),'pendientes'=>Appointment::whereDate('scheduled_at',today())->where('status','programada')->count()];
         $upcoming=$role==='portero'?Appointment::with(['patient','type.service'])->whereDate('scheduled_at',today())->where('status','programada')->whereBetween('scheduled_at',[now(),now()->addMinutes(60)])->orderBy('scheduled_at')->get():collect();
-        return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo'));
+        $location=$this->resolveLocation($request);
+        return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo','location'));
+    }
+
+    /** Ciudad/país por IP del cliente, para mostrar junto a la fecha y hora. En red local (IP privada,
+     * como al probar en localhost) no hay nada que geolocalizar, así que se usa la sede real del hospital. */
+    private const FALLBACK_LOCATION = 'Paita, Perú';
+
+    private function resolveLocation(Request $request): ?string
+    {
+        $ip = $request->ip();
+        if (! $ip || ! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return self::FALLBACK_LOCATION;
+        }
+
+        return Cache::remember("ip_location_{$ip}", now()->addDay(), function () use ($ip) {
+            try {
+                $response = Http::timeout(2)->get("http://ip-api.com/json/{$ip}", ['fields' => 'status,city,country']);
+                if (! $response->ok() || $response->json('status') !== 'success') return self::FALLBACK_LOCATION;
+                $city = $response->json('city');
+                $country = $response->json('country');
+                return trim(collect([$city, $country])->filter()->implode(', ')) ?: self::FALLBACK_LOCATION;
+            } catch (\Throwable) {
+                return self::FALLBACK_LOCATION;
+            }
+        });
     }
 
     private function portalDate(?string $date): \Illuminate\Support\Carbon
@@ -103,7 +131,11 @@ class HospitalPortalController extends Controller
             }
         }
         $identity=$this->patientIdentity($data);
-        $patient=Patient::firstOrNew(['NroDocumento'=>$data['dni']]);
+        $patient=Patient::where('NroDocumento',$data['dni'])->first();
+        if ($patient && $this->hasActiveHospitalization($patient->IdPaciente)) {
+            return back()->withInput()->withErrors('No se puede programar una consulta: el paciente tiene una hospitalización activa. Registra la atención desde hospitalización.');
+        }
+        $patient ??= new Patient(['NroDocumento' => $data['dni']]);
         $patient->fill(array_filter(array_merge($identity,['birth_date'=>$data['birth_date']??null,'sex'=>$data['sex']??null,'phone'=>$data['phone']??null,'address'=>$data['address']??null,'email'=>$data['email']??null,'medical_record_number'=>$data['medical_record_number']??null,'insurance'=>$data['insurance']??null]),fn($value)=>$value!==null&&$value!==''));
         $patient->save();
         $appointment=Appointment::create(['code'=>'CIT-'.now()->format('ymdHis').'-'.random_int(10,99),'paciente_id'=>$patient->IdPaciente,'appointment_type_id'=>$data['appointment_type_id'],'service_area_id'=>$data['service_area_id']??null,'service_subarea_id'=>$data['service_subarea_id']??null,'trabajador_id'=>$trabajadorId,'created_by'=>$request->user()->id,'scheduled_at'=>$data['scheduled_at'],'status'=>'programada','room'=>$data['room']??null,'notes'=>$data['notes']??null]);
@@ -129,6 +161,9 @@ class HospitalPortalController extends Controller
         abort_unless($request->user()->canAccessModule('portero'),403);
         $data=$request->validate(['access_point'=>'nullable|string|max:80']);
         if (! in_array($appointment->status, ['programada', 'no_asistio'], true)) return back()->withErrors('La cita ya fue confirmada o no está disponible.');
+        if ($this->hasActiveHospitalization($appointment->paciente_id)) {
+            return back()->withErrors('No se puede confirmar esta consulta: el paciente tiene una hospitalización activa.');
+        }
         $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$data){
             $from=$appointment->status; $point=$data['access_point']??'Puerta principal';
@@ -165,6 +200,7 @@ class HospitalPortalController extends Controller
     public function pendingCount(Request $request): JsonResponse
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
+        $this->markExpiredAppointments();
         $count=Appointment::whereDate('scheduled_at',today())->where('status','programada')->where('scheduled_at','<=',now()->addMinutes(60))->count();
         return response()->json(['count'=>$count]);
     }
@@ -172,18 +208,18 @@ class HospitalPortalController extends Controller
     public function pendingNotifications(Request $request): JsonResponse
     {
         abort_unless($request->user()->canAccessModule('portero'), 403);
+        $this->markExpiredAppointments();
 
         $appointments = Appointment::with(['patient', 'type.service'])
             ->whereDate('scheduled_at', today())
             ->where('status', 'programada')
-            ->whereBetween('scheduled_at', [now(), now()->addMinutes(60)])
             ->orderBy('scheduled_at')
             ->get()
             ->map(fn (Appointment $appointment) => [
                 'id' => $appointment->id,
                 'patient' => $appointment->patient?->full_name ?? 'Paciente sin nombre',
                 'service' => $appointment->type?->service?->name ?? 'Servicio no definido',
-                'time' => $appointment->scheduled_at->format('H:i'),
+                'time' => $appointment->scheduled_at->format('h:i').' '.($appointment->scheduled_at->hour < 12 ? 'a. m.' : 'p. m.'),
             ]);
 
         return response()->json(['count' => $appointments->count(), 'notifications' => $appointments]);
@@ -193,6 +229,7 @@ class HospitalPortalController extends Controller
     public function appointmentsVersion(Request $request): JsonResponse
     {
         abort_unless($request->user()->canAccessModule('portero'), 403);
+        $this->markExpiredAppointments();
 
         $from = $this->portalDate($request->input('from'));
         $to = $this->portalDate($request->input('to'));
@@ -224,6 +261,37 @@ class HospitalPortalController extends Controller
         return back()->with('success','Atención del paciente confirmada correctamente.');
     }
 
+    /** Respaldo en tiempo real: opera aunque el programador del servidor no esté activo. */
+    private function markExpiredAppointments(): void
+    {
+        $graceMinutes = max(0, (int) config('hospital.attendance_grace_minutes', self::ATTENDANCE_GRACE_MINUTES));
+        $cutoff = now()->subMinutes($graceMinutes);
+
+        Appointment::query()
+            ->where('status', 'programada')
+            ->where('scheduled_at', '<=', $cutoff)
+            ->select('id')
+            ->orderBy('id')
+            ->chunkById(100, function ($appointments) use ($cutoff, $graceMinutes) {
+                foreach ($appointments as $candidate) {
+                    DB::transaction(function () use ($candidate, $cutoff, $graceMinutes) {
+                        $appointment = Appointment::query()->lockForUpdate()->find($candidate->id);
+                        if (! $appointment || $appointment->status !== 'programada' || $appointment->scheduled_at->gt($cutoff)) return;
+                        $appointment->update(['status' => 'no_asistio']);
+                        DB::table('appointment_status_history')->insert([
+                            'appointment_id' => $appointment->id,
+                            'changed_by' => null,
+                            'from_status' => 'programada',
+                            'to_status' => 'no_asistio',
+                            'notes' => "Inasistencia automática: no se registró llegada dentro de {$graceMinutes} minutos de tolerancia.",
+                            'ip_address' => null,
+                            'created_at' => now(),
+                        ]);
+                    });
+                }
+            });
+    }
+
     private function recordStatus(Request $request,Appointment $appointment,?string $from,string $to,?string $notes=null):void
     {
         DB::table('appointment_status_history')->insert(['appointment_id'=>$appointment->id,'changed_by'=>$request->user()->id,'from_status'=>$from,'to_status'=>$to,'notes'=>$notes,'ip_address'=>$request->ip(),'created_at'=>now()]);
@@ -233,7 +301,7 @@ class HospitalPortalController extends Controller
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
         $patient=Patient::where('NroDocumento',$dni)->first(); if(!$patient)return response()->json(['message'=>'Paciente no encontrado.'],404);
-        $appointments=$patient->appointments()->with('type.service')->whereDate('scheduled_at','>=',today())->orderBy('scheduled_at')->get()->map(fn($a)=>['code'=>$a->code,'date'=>$a->scheduled_at->format('d/m/Y'),'time'=>$a->scheduled_at->format('H:i'),'type'=>$a->type->name,'service'=>$a->type->service->name,'location'=>$a->room?:$a->type->service->location,'status'=>$a->status,'preparation'=>$a->type->preparation]);
+        $appointments=$patient->appointments()->with('type.service')->whereDate('scheduled_at','>=',today())->orderBy('scheduled_at')->get()->map(fn($a)=>['code'=>$a->code,'date'=>$a->scheduled_at->format('d/m/Y'),'time'=>$a->scheduled_at->format('h:i').' '.($a->scheduled_at->hour < 12 ? 'a. m.' : 'p. m.'),'type'=>$a->type->name,'service'=>$a->type->service->name,'location'=>$a->room?:$a->type->service->location,'status'=>$a->status,'preparation'=>$a->type->preparation]);
         return response()->json(['patient'=>['dni'=>$patient->dni,'name'=>$patient->full_name,'insurance'=>$patient->insurance],'appointments'=>$appointments]);
     }
 
@@ -241,7 +309,146 @@ class HospitalPortalController extends Controller
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
         $data=$request->validate(['dni'=>'required|digits:8','movement'=>'required|in:ingreso,salida','appointment_id'=>'nullable|exists:citas_control_acceso,id','access_point'=>'required|string|max:80']); $patient=Patient::where('NroDocumento',$data['dni'])->firstOrFail();
+        if ($this->hasActiveHospitalization($patient->IdPaciente)) {
+            return response()->json(['message' => 'No se puede registrar acceso para consulta: el paciente tiene una hospitalización activa.'], 422);
+        }
         DB::table('access_logs')->insert(['paciente_id'=>$patient->IdPaciente,'appointment_id'=>$data['appointment_id']??null,'registered_by'=>$request->user()->id,'movement'=>$data['movement'],'person_type'=>'paciente','access_point'=>$data['access_point'],'reason'=>'Cita hospitalaria','registered_at'=>now(),'created_at'=>now(),'updated_at'=>now()]);
         return response()->json(['message'=>'Movimiento registrado correctamente.']);
+    }
+
+    /** Hospitalizaciones activas disponibles para registrar visitas. */
+    public function hospitalizedPatients(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+
+        $patients = DB::table('atenciones as attention')
+            ->join('pacientes as patient', 'patient.IdPaciente', '=', 'attention.IdPaciente')
+            ->leftJoin('servicios as service', 'service.IdServicio', '=', 'attention.IdServicioIngreso')
+            ->where(function ($query) {
+                $query->whereNull('attention.FechaEgreso')
+                    ->orWhere('attention.FechaEgreso', '0000-00-00');
+            })
+            ->orderByDesc('attention.FechaIngreso')
+            ->select([
+                'attention.IdAtencion', 'attention.IdCamaIngreso',
+                'service.Nombre as service_name',
+                DB::raw("TRIM(CONCAT_WS(' ', patient.PrimerNombre, patient.SegundoNombre, patient.TercerNombre, patient.ApellidoPaterno, patient.ApellidoMaterno)) as patient_name"),
+            ])
+            ->get()
+            ->map(function ($patient) {
+                $service = trim((string) ($patient->service_name ?: 'Hospitalización'));
+                $bed = $patient->IdCamaIngreso ? 'Cama '.$patient->IdCamaIngreso.' · ' : '';
+
+                return [
+                    'key' => 'hospitalized-'.$patient->IdAtencion,
+                    'name' => trim((string) $patient->patient_name),
+                    'detail' => 'Hospitalización · '.$bed.$service,
+                ];
+            })
+            ->filter(fn ($patient) => filled($patient['name']))
+            ->values();
+
+        return response()->json(['patients' => $patients]);
+    }
+
+    /** Visitas guardadas en access_logs: no requiere modificar la estructura heredada. */
+    public function hospitalVisits(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+
+        return response()->json(['visits' => $this->hospitalVisitRows($request->string('patient')->toString())]);
+    }
+
+    public function registerHospitalVisit(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+        $data = $request->validate([
+            'patient_label' => 'required|string|max:160',
+            'visitor_name' => 'required|string|max:100',
+            'visitor_dni' => ['required', 'digits:8'],
+            'relationship' => 'required|string|max:60',
+            'entry_time' => 'nullable|date_format:H:i',
+        ]);
+
+        $visitorPatient = Patient::where('NroDocumento', $data['visitor_dni'])->first();
+        if ($visitorPatient && $this->hasActiveHospitalization($visitorPatient->IdPaciente)) {
+            return response()->json(['message' => 'No se puede registrar esta visita: la persona está hospitalizada actualmente.'], 422);
+        }
+
+        $alreadyInside = DB::table('access_logs')
+            ->where('person_type', 'visitante')
+            ->where('movement', 'ingreso')
+            ->whereDate('registered_at', today())
+            ->get()
+            ->contains(fn ($log) => data_get(json_decode($log->notes ?? '{}', true), 'visitor_dni') === $data['visitor_dni'] && ! data_get(json_decode($log->notes ?? '{}', true), 'checked_out_at'));
+        if ($alreadyInside) return response()->json(['message' => 'Este DNI ya tiene una visita activa.'], 422);
+
+        $now = now();
+        $registeredAt = filled($data['entry_time'] ?? null)
+            ? $now->copy()->setTimeFromTimeString($data['entry_time'])
+            : $now;
+        $id = DB::table('access_logs')->insertGetId([
+            'paciente_id' => null,
+            'appointment_id' => null,
+            'registered_by' => $request->user()->id,
+            'movement' => 'ingreso',
+            'person_type' => 'visitante',
+            'access_point' => 'Visita hospitalaria',
+            'reason' => 'Visita a '.$data['patient_label'],
+            'companions' => 1,
+            'notes' => json_encode($data, JSON_UNESCAPED_UNICODE),
+            'registered_at' => $registeredAt,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        return response()->json(['message' => 'Visita registrada.', 'visit' => $this->hospitalVisitRows()->firstWhere('id', $id)], 201);
+    }
+
+    public function checkoutHospitalVisit(Request $request, int $logId): JsonResponse
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+        $log = DB::table('access_logs')->where('id', $logId)->where('person_type', 'visitante')->first();
+        abort_unless($log, 404);
+        $notes = json_decode($log->notes ?? '{}', true) ?: [];
+        if (data_get($notes, 'checked_out_at')) return response()->json(['message' => 'La salida ya fue registrada.'], 422);
+        $notes['checked_out_at'] = now()->toIso8601String();
+        DB::table('access_logs')->where('id', $logId)->update(['notes' => json_encode($notes, JSON_UNESCAPED_UNICODE), 'updated_at' => now()]);
+        return response()->json([
+            'message' => 'Salida registrada.',
+            'visit' => $this->hospitalVisitRows()->firstWhere('id', $logId),
+        ]);
+    }
+
+    private function hospitalVisitRows(?string $patientName = null): \Illuminate\Support\Collection
+    {
+        $visits = DB::table('access_logs')->where('person_type', 'visitante')->whereDate('registered_at', today())->orderByDesc('registered_at')->get()->map(function ($log) {
+            $notes = json_decode($log->notes ?? '{}', true) ?: [];
+            return [
+                'id' => $log->id,
+                'patient_label' => data_get($notes, 'patient_label', str_replace('Visita a ', '', $log->reason ?? 'Paciente hospitalizado')),
+                'visitor_name' => data_get($notes, 'visitor_name', 'Visitante'),
+                'visitor_dni' => data_get($notes, 'visitor_dni', ''),
+                'relationship' => data_get($notes, 'relationship', 'Sin parentesco'),
+                'registered_at' => $log->registered_at,
+                'checked_out_at' => data_get($notes, 'checked_out_at'),
+            ];
+        });
+
+        return filled($patientName)
+            ? $visits->filter(fn ($visit) => str_contains((string) $visit['patient_label'], $patientName))->values()
+            : $visits;
+    }
+
+    /** Un paciente hospitalizado se atiende por hospitalización, no por consulta ni como visitante. */
+    private function hasActiveHospitalization(int $patientId): bool
+    {
+        return DB::table('atenciones')
+            ->where('IdPaciente', $patientId)
+            ->where(function ($query) {
+                $query->whereNull('FechaEgreso')
+                    ->orWhere('FechaEgreso', '0000-00-00');
+            })
+            ->exists();
     }
 }

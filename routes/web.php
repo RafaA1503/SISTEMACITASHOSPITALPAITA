@@ -32,6 +32,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('/portal/{role?}', [HospitalPortalController::class, 'index'])->name('portal');
 
+    Route::view('/citas', 'modules', ['module' => 'citas'])->name('citas');
     Route::view('/pacientes', 'modules', ['module' => 'pacientes'])->name('pacientes');
     Route::view('/control-acceso', 'modules', ['module' => 'accesos'])->name('accesos');
     Route::get('/control-acceso/atenciones/{flow?}', [CareFlowController::class, 'index'])->name('access.care-flow');
@@ -55,7 +56,14 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('dni')
         ->name('patients.appointments');
     Route::post('/api/accesos', [HospitalPortalController::class, 'registerAccess'])->name('access.store');
+    Route::get('/api/pacientes-hospitalizados', [HospitalPortalController::class, 'hospitalizedPatients'])->name('hospitalized.patients.index');
+    Route::get('/api/visitas-hospitalarias', [HospitalPortalController::class, 'hospitalVisits'])->name('hospital.visits.index');
+    Route::post('/api/visitas-hospitalarias', [HospitalPortalController::class, 'registerHospitalVisit'])->name('hospital.visits.store');
+    Route::put('/api/visitas-hospitalarias/{logId}/salida', [HospitalPortalController::class, 'checkoutHospitalVisit'])->whereNumber('logId')->name('hospital.visits.checkout');
+    Route::post('/citas', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
+    Route::put('/citas/{appointment}/completar', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
+    Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
     Route::get('/api/portero/citas-version', [HospitalPortalController::class, 'appointmentsVersion'])->name('portero.appointments_version');
     Route::get('/api/portero/notificaciones', [HospitalPortalController::class, 'pendingNotifications'])->name('portero.notifications');

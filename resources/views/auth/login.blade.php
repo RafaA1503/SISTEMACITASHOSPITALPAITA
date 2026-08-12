@@ -2,7 +2,14 @@
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ingresar | Hospital Nuestra Señora de las Mercedes</title><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">@vite(['resources/css/app.css','resources/js/app.js'])</head>
 <body class="auth-body"><main class="login-shell">
-<section class="login-brand"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo"><div><p>SISTEMA HOSPITALARIO</p><h1>Hospital Nuestra Señora de las Mercedes</h1><span>Acceso seguro para el personal autorizado.</span></div><small>Red de Salud · Paita · Piura</small></section>
+<section class="login-brand">
+<div class="login-carousel" data-login-carousel aria-label="Imágenes del Hospital Nuestra Señora de las Mercedes">
+<figure class="login-carousel-slide is-active"><img src="{{ asset('images/hospital-fachada-1.png') }}" alt="Fachada principal del Hospital Nuestra Señora de las Mercedes" fetchpriority="high"></figure>
+<figure class="login-carousel-slide"><img src="{{ asset('images/hospital-fachada-2.png') }}" alt="Ingreso del Hospital Nuestra Señora de las Mercedes"></figure>
+<figure class="login-carousel-slide"><img src="{{ asset('images/hospital-fachada-3.png') }}" alt="Edificio del Hospital Nuestra Señora de las Mercedes"></figure>
+<div class="login-carousel-controls"><button type="button" data-carousel-prev aria-label="Imagen anterior">‹</button><div role="tablist" aria-label="Seleccionar imagen"><button type="button" class="is-active" data-carousel-dot aria-label="Imagen 1" aria-selected="true"></button><button type="button" data-carousel-dot aria-label="Imagen 2" aria-selected="false"></button><button type="button" data-carousel-dot aria-label="Imagen 3" aria-selected="false"></button></div><button type="button" data-carousel-next aria-label="Imagen siguiente">›</button></div>
+</div>
+<div class="login-brand-content"><img src="{{ asset('logo-hospital-la-merced.png') }}" alt="Logo"><div><p>SISTEMA HOSPITALARIO</p><h1>Hospital Nuestra Señora de las Mercedes</h1><span>Acceso seguro para el personal autorizado.</span></div></div><small>Red de Salud · Paita · Piura</small></section>
 <section class="login-card"><div><p class="eyebrow">BIENVENIDO</p><h2>Iniciar sesión</h2><span>Ingresa con tu cuenta institucional.</span></div>
 @if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif
 @if($errors->any())<div class="auth-error">{{ $errors->first() }}</div>@endif

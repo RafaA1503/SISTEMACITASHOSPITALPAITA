@@ -8,7 +8,7 @@
     };
 @endphp
 <tr data-row-id="{{ $a->id }}" data-search="{{ mb_strtolower($a->patient->full_name.' '.$a->patient->dni.' '.$a->type->service->name.' '.$a->type->name) }}" data-service="{{ $a->type->service_id }}" data-status="{{ $a->status }}" data-scheduled-at="{{ $a->scheduled_at->toIso8601String() }}" data-patient-name="{{ $a->patient->full_name }}" data-service-name="{{ $a->type->service->name }}">
-    <td><strong>{{ $a->scheduled_at->format('H:i') }}</strong></td>
+    <td><strong>{{ $a->scheduled_at->format('h:i') }} {{ $a->scheduled_at->hour < 12 ? 'a. m.' : 'p. m.' }}</strong></td>
     <td><strong>{{ $a->patient->full_name }}</strong><small>DNI {{ $a->patient->dni }}</small></td>
     <td>{{ $a->type->service->name }}</td>
     <td>{{ $a->type->name }}</td>

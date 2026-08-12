@@ -10,7 +10,10 @@ class DniLookupController extends Controller {
   $validated=validator(['dni'=>$dni],['dni'=>['required','digits:8']])->validate(); $url=config('services.codart.url'); $token=config('services.codart.token');
   if(!$url||!$token) return response()->json(['message'=>'La consulta de DNI no está configurada.'],503);
   try {
-   $endpoint=preg_replace('~/dni$~','/'.$validated['dni'],rtrim($url,'/'));
+   // La URL del proveedor usa el marcador {dni}; el token nunca se expone al navegador.
+   $endpoint=str_contains($url,'{dni}')
+    ? str_replace('{dni}',rawurlencode($validated['dni']),$url)
+    : rtrim($url,'/').'/'.$validated['dni'];
    $response=Http::acceptJson()->asJson()->withToken($token)->timeout(25)->get($endpoint);
    if($response->failed()) {
     $providerMessage=$response->json('message');
