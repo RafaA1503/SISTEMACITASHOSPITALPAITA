@@ -51,9 +51,6 @@ class ImportLegacyHospitalCatalog extends Command
                 $specialty = Specialty::where('legacy_id', $this->nullableInt($row[2] ?? null))->first();
                 $service = Service::updateOrCreate(['legacy_id' => (int) $row[0]], [
                     'name' => trim($row[1]),
-                    // `legacy_id` conserva el IdServicio de la base fuente. El
-                    // código sólo satisface una restricción técnica del proyecto;
-                    // nunca se muestra ni sustituye al IdServicio.
                     'code' => 'legacy-service-'.$row[0],
                     'specialty_id' => $specialty?->id,
                     'service_type_id' => ServiceType::where('legacy_id', $this->nullableInt($row[3] ?? null))->value('id'),

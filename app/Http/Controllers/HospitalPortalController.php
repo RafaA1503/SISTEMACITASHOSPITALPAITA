@@ -28,7 +28,7 @@ class HospitalPortalController extends Controller
      */
     private function broadcastAppointment(Request $request, Appointment $appointment, string $porteriaAction, ?string $fromStatus = null)
     {
-        $appointment->loadMissing(['patient', 'type.service', 'area', 'subarea']);
+        $appointment->loadMissing(['patient', 'type.service', 'area', 'subarea', 'accessLogs']);
         $targets = [[
             'selector' => '#patientsTableBody',
             'action' => $porteriaAction,
@@ -51,7 +51,7 @@ class HospitalPortalController extends Controller
         $dateTo=$role==='portero'?$this->portalDate($request->input('to')):today();
         if($dateTo->lessThan($dateFrom)) $dateTo=$dateFrom->copy();
 
-        $query=Appointment::with(['patient','type.service','area','subarea'])->orderBy('scheduled_at');
+        $query=Appointment::with(['patient','type.service','area','subarea','accessLogs'])->orderBy('scheduled_at');
         if($role==='portero') {
             $query->whereBetween('scheduled_at',[$dateFrom->copy()->startOfDay(),$dateTo->copy()->endOfDay()]);
         } else {
@@ -160,10 +160,9 @@ class HospitalPortalController extends Controller
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
         $data=$request->validate(['access_point'=>'nullable|string|max:80']);
-        if (! in_array($appointment->status, ['programada', 'no_asistio'], true)) return back()->withErrors('La cita ya fue confirmada o no está disponible.');
-        if ($this->hasActiveHospitalization($appointment->paciente_id)) {
-            return back()->withErrors('No se puede confirmar esta consulta: el paciente tiene una hospitalización activa.');
-        }
+        abort_unless(in_array($appointment->status, ['programada', 'no_asistio'], true), 422, 'La cita ya fue confirmada o no está disponible.');
+        abort_if($appointment->status === 'no_asistio' && ! $appointment->scheduled_at->isToday(), 422, 'Esta cita ya perdió su día programado: no se puede registrar como llegada tardía.');
+        abort_if($this->hasActiveHospitalization($appointment->paciente_id), 422, 'No se puede confirmar esta consulta: el paciente tiene una hospitalización activa.');
         $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$data){
             $from=$appointment->status; $point=$data['access_point']??'Puerta principal';
@@ -182,7 +181,7 @@ class HospitalPortalController extends Controller
     public function markNoShow(Request $request, Appointment $appointment)
     {
         abort_unless($request->user()->canAccessModule('portero'),403);
-        if ($appointment->status !== 'programada') return back()->withErrors('Solo se puede marcar inasistencia en citas que aún no fueron confirmadas.');
+        abort_unless($appointment->status === 'programada', 422, 'Solo se puede marcar inasistencia en citas que aún no fueron confirmadas.');
         $from = $appointment->status;
         DB::transaction(function()use($request,$appointment){
             $from=$appointment->status;
@@ -195,6 +194,37 @@ class HospitalPortalController extends Controller
         }
 
         return back()->with('success','Se registró la inasistencia del paciente.');
+    }
+
+    public function checkoutAppointment(Request $request, Appointment $appointment)
+    {
+        abort_unless($request->user()->canAccessModule('portero'), 403);
+
+        DB::transaction(function () use ($request, $appointment) {
+            $locked = Appointment::query()->lockForUpdate()->findOrFail($appointment->id);
+            $entry = DB::table('access_logs')->where('appointment_id', $locked->id)
+                ->where('movement', 'ingreso')->orderByDesc('registered_at')->first();
+
+            abort_unless($entry, 422, 'Primero debe registrarse la entrada del paciente.');
+
+            $alreadyCheckedOut = DB::table('access_logs')->where('appointment_id', $locked->id)
+                ->where('movement', 'salida')->where('registered_at', '>=', $entry->registered_at)->exists();
+            abort_if($alreadyCheckedOut, 422, 'La salida de esta atención ya fue registrada.');
+
+            DB::table('access_logs')->insert([
+                'paciente_id' => $locked->paciente_id, 'appointment_id' => $locked->id,
+                'registered_by' => $request->user()->id, 'movement' => 'salida',
+                'person_type' => 'paciente', 'access_point' => $locked->access_point ?: 'Puerta principal',
+                'reason' => 'Salida de atención hospitalaria', 'companions' => 0,
+                'notes' => 'Salida registrada desde Pacientes programados.',
+                'registered_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        });
+
+        $appointment->unsetRelation('accessLogs');
+        if ($response = $this->broadcastAppointment($request, $appointment, 'updated')) return $response;
+
+        return back()->with('success', 'Salida registrada correctamente.');
     }
 
     public function pendingCount(Request $request): JsonResponse
@@ -250,7 +280,7 @@ class HospitalPortalController extends Controller
         abort_unless($request->user()->canAccessModule('servicio'),403);
         $ownTrabajadorId=$request->user()->trabajadorRecord?->idTrabajador;
         if($request->user()->role!=='administrador') abort_unless($appointment->trabajador_id===$ownTrabajadorId,403);
-        if (! in_array($appointment->status,['confirmada','ingreso'],true)) return back()->withErrors('Portería debe confirmar primero la llegada del paciente.');
+        abort_unless(in_array($appointment->status,['confirmada','ingreso'],true), 422, 'Portería debe confirmar primero la llegada del paciente.');
         $from = $appointment->status;
         DB::transaction(function()use($request,$appointment,$ownTrabajadorId){$from=$appointment->status;$appointment->update(['status'=>'atendida','trabajador_id'=>$appointment->trabajador_id ?: $ownTrabajadorId,'attention_started_at'=>$appointment->attention_started_at?:now(),'attention_completed_at'=>now()]);$this->recordStatus($request,$appointment,$from,'atendida','Atención confirmada por el profesional.');});
 

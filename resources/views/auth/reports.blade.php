@@ -7,7 +7,17 @@
  @vite(['resources/css/app.css','resources/js/app.js'])
 </head>
 <body><div class="settings-page">
- <header><a href="{{ route('portal','administrador') }}">← Volver</a><strong>Reportes</strong><a href="{{ route('admin.catalog') }}">Servicios</a></header>
+ <header class="report-page-header">
+  <a class="settings-header-action settings-header-action--back" href="{{ route('portal','administrador') }}" aria-label="Volver al panel de administración">
+   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+   <span>Volver al panel</span>
+  </a>
+  <strong>Reportes</strong>
+  <a class="settings-header-action settings-header-action--next" href="{{ route('admin.catalog') }}" aria-label="Ir a servicios">
+   <span>Servicios</span>
+   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+  </a>
+ </header>
  <main>
   <div class="admin-heading"><div><p>SEGUIMIENTO Y CONTROL</p><h1>Atención, faltas y puntualidad</h1><span>Resumen de pacientes atendidos, inasistencias y llegadas tarde por rango de fechas.</span></div></div>
 

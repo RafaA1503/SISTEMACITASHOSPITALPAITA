@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Appointment extends Model
 {
@@ -18,6 +19,11 @@ class Appointment extends Model
     public function patient(): BelongsTo
     {
         return $this->belongsTo(Patient::class, 'paciente_id', 'IdPaciente');
+    }
+
+    public function accessLogs(): HasMany
+    {
+        return $this->hasMany(AccessLog::class, 'appointment_id')->orderBy('registered_at');
     }
 
     public function type(): BelongsTo

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ingresar | Hospital Nuestra Señora de las Mercedes</title><link rel="manifest" href="{{ asset('manifest.json') }}"><meta name="theme-color" content="#0c3188"><link rel="icon" href="{{ asset('icons/icon-192.png') }}"><link rel="apple-touch-icon" href="{{ asset('icons/icon-192.png') }}"><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">@vite(['resources/css/app.css','resources/js/app.js'])</head>
-<body class="auth-body"><main class="login-shell">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ingresar | Hospital Nuestra Señora de las Mercedes</title><meta name="app-version" content="{{ \App\Support\AppVersion::hash() }}"><link rel="manifest" href="{{ asset('manifest.json') }}"><meta name="theme-color" content="#0c3188"><link rel="icon" href="{{ asset('icons/icon-192.png') }}"><link rel="apple-touch-icon" href="{{ asset('icons/icon-192.png') }}"><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">@vite(['resources/css/app.css','resources/js/app.js'])</head>
+<body class="auth-body"><button type="button" id="themeToggle" class="theme-toggle" aria-label="Cambiar tema"></button><main class="login-shell">
 <section class="login-brand">
 <div class="login-carousel" data-login-carousel aria-label="Imágenes del Hospital Nuestra Señora de las Mercedes">
 <figure class="login-carousel-slide is-active"><img src="{{ asset('images/hospital-fachada-1.png') }}" alt="Fachada principal del Hospital Nuestra Señora de las Mercedes" fetchpriority="high"></figure>
@@ -14,9 +14,9 @@
 @if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif
 @if($errors->any())<div class="auth-error">{{ $errors->first() }}</div>@endif
 <form method="POST" action="{{ route('login.store') }}">@csrf
-<label class="login-captcha"><span>Verificacion de seguridad</span><div><b>{{ $captchaQuestion }} =</b><input name="captcha" inputmode="numeric" autocomplete="off" required maxlength="3" placeholder="Resultado" aria-label="Resultado de {{ $captchaQuestion }}"></div><small>Resuelve la operacion para ingresar con correo y contrasena.</small></label>
-<label>Correo institucional<input name="email" type="email" value="{{ old('email') }}" required autofocus autocomplete="username" placeholder="usuario@lamerced.gob.pe"></label>
+<label>Correo institucional o usuario<input name="login" type="text" value="{{ old('login') }}" required autofocus autocomplete="username" maxlength="150" placeholder="correo@lamerced.gob.pe o usuario"></label>
 <label>Contraseña<div class="password-field"><input id="loginPassword" name="password" type="password" required autocomplete="current-password" placeholder="••••••••"><button id="togglePassword" type="button">Mostrar</button></div></label>
+<label class="login-letter-captcha"><span>Verificación de seguridad</span><div><b id="captchaCode" aria-label="Código de seguridad">{{ $captchaCode }}</b><button type="button" id="refreshCaptcha" data-url="{{ route('captcha.refresh') }}" aria-label="Generar otro código" title="Generar otro código">↻</button><input name="captcha" required minlength="6" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Escribe el código"></div><small>Escribe las 6 letras o números que aparecen en la imagen.</small></label>
 <label class="remember"><input type="checkbox" name="remember"> Mantener sesión iniciada</label><button class="login-primary">Ingresar al sistema</button></form>
 <a class="forgot-password-link" href="{{ route('password.request') }}">¿Olvidaste tu contraseña?</a>
 <div class="auth-divider"><span>o ingresa de forma segura</span></div><button class="passkey-login" id="passkeyLogin"><span>◎</span><div><strong>Usar huella o Passkey</strong><small>Huella, Face ID o Windows Hello</small></div></button><p class="auth-note">La información biométrica permanece protegida en tu dispositivo.</p>

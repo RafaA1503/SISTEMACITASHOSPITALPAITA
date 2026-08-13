@@ -22,6 +22,7 @@ Route::get('/', function () {
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'loginView'])->name('login');
     Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+    Route::get('/captcha/nuevo', [AuthController::class, 'refreshCaptcha'])->name('captcha.refresh');
     Route::get('/olvide-password', [PasswordResetController::class, 'forgotView'])->name('password.request');
     Route::post('/olvide-password', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:5,1')->name('password.email');
     Route::get('/restablecer-password/{token}', [PasswordResetController::class, 'resetView'])->name('password.reset');
@@ -62,12 +63,14 @@ Route::middleware('auth')->group(function () {
     Route::put('/api/visitas-hospitalarias/{logId}/salida', [HospitalPortalController::class, 'checkoutHospitalVisit'])->whereNumber('logId')->name('hospital.visits.checkout');
     Route::post('/citas', [HospitalPortalController::class, 'storeAppointment'])->name('appointments.store');
     Route::put('/citas/{appointment}/confirmar', [HospitalPortalController::class, 'confirmAppointment'])->name('appointments.confirm');
+    Route::put('/citas/{appointment}/salida', [HospitalPortalController::class, 'checkoutAppointment'])->name('appointments.checkout');
     Route::put('/citas/{appointment}/completar', [HospitalPortalController::class, 'completeAppointment'])->name('appointments.complete');
     Route::put('/citas/{appointment}/no-asistio', [HospitalPortalController::class, 'markNoShow'])->name('appointments.no_show');
     Route::get('/api/portero/pendientes-count', [HospitalPortalController::class, 'pendingCount'])->name('portero.pending_count');
     Route::get('/api/portero/citas-version', [HospitalPortalController::class, 'appointmentsVersion'])->name('portero.appointments_version');
     Route::get('/api/portero/notificaciones', [HospitalPortalController::class, 'pendingNotifications'])->name('portero.notifications');
     Route::get('/api/sesion/estado', [AuthController::class, 'sessionStatus'])->name('session.status');
+    Route::get('/api/version', fn () => response()->json(['version' => \App\Support\AppVersion::hash()]))->name('app.version');
     Route::get('/administracion/reportes', [ReportController::class, 'index'])->name('admin.reports');
     Route::get('/administracion/reportes/excel', [ReportController::class, 'exportExcel'])->name('admin.reports.excel');
     Route::get('/administracion/reportes/pdf', [ReportController::class, 'exportPdf'])->name('admin.reports.pdf');

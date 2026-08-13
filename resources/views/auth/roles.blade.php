@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Roles y permisos | Hospital Nuestra Señora de las Mercedes</title>@vite(['resources/css/app.css','resources/js/app.js'])</head>
-<body><div class="settings-page roles-page"><header><a href="{{ route('portal','administrador') }}">← Volver</a><strong>Roles y permisos</strong><a href="{{ route('admin.users') }}">Usuarios</a></header><main>
+<body><div class="settings-page roles-page"><header class="report-page-header"><a class="settings-header-action settings-header-action--back" href="{{ route('portal','administrador') }}" aria-label="Volver al panel de administración"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg><span>Volver al panel</span></a><strong>Roles y permisos</strong><a class="settings-header-action settings-header-action--next" href="{{ route('admin.users') }}" aria-label="Ir a usuarios"><span>Usuarios</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></header><main>
 @if(session('success'))<div class="success-banner">✓ {{ session('success') }}</div>@endif @if($errors->any())<div class="auth-error">{{ $errors->first() }}</div>@endif
 <div class="admin-heading"><div><p>CONTROL DE ACCESO</p><h1>Usuarios, roles y permisos</h1><span>Crea usuarios y define exactamente lo que pueden usar en el sistema.</span></div></div>
 <section class="roles-layout">

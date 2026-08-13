@@ -63,20 +63,45 @@ class RoleController extends Controller
     public function storeUser(Request $request)
     {
         $this->admin($request);
+        if ($request->filled('username')) {
+            $request->merge(['username' => preg_replace('/\s+/u', ' ', trim((string) $request->input('username')))]);
+        }
         $data = $request->validate([
             'name' => 'required|string|max:120',
             'email' => 'required|email|max:200',
-            'username' => 'nullable|alpha_dash|max:20',
+            // El formulario propone alias como "ana.lopez". alpha_dash no
+            // admite el punto y terminaba mostrando el nombre técnico de la
+            // regla al usuario.
+            // También acepta DNI o legajos compuestos únicamente por números.
+            'username' => ['nullable', 'string', 'max:50', 'regex:/^[\p{L}\p{N}._-]+(?: [\p{L}\p{N}._-]+)*$/u'],
             'password' => 'required|string|min:8|confirmed',
             'custom_role_id' => 'required|exists:roles,idRol',
+        ], [
+            'name.required' => 'Ingresa el nombre completo.',
+            'email.required' => 'Ingresa el correo institucional.',
+            'email.email' => 'Ingresa un correo institucional válido.',
+            'username.regex' => 'El usuario puede contener letras, números, espacios, puntos, guiones y guion bajo.',
+            'username.max' => 'El usuario no puede superar los 50 caracteres.',
+            'password.required' => 'Ingresa una contraseña inicial.',
+            'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
+            'password.confirmed' => 'Las contraseñas no coinciden.',
+            'custom_role_id.required' => 'Selecciona un rol para el usuario.',
+            'custom_role_id.exists' => 'El rol seleccionado ya no está disponible.',
         ]);
 
         $systemId = User::sistemaId();
         $email = strtolower(trim($data['email']));
         abort_if(User::where('idSistema', $systemId)->where('correo', $email)->exists(), 422, 'Ya existe un usuario con ese correo.');
 
-        $username = strtolower(trim($data['username'] ?: Str::before($email, '@')));
-        abort_if(User::where('idSistema', $systemId)->where('usuario', $username)->exists(), 422, 'El nombre de usuario ya está en uso.');
+        $usernameBase = strtolower(trim($data['username'] ?: Str::before($email, '@')));
+        $username = $usernameBase;
+        $suffix = 2;
+        // Los nombres y alias visibles pueden repetirse. Se conserva un alias
+        // técnico libre para respetar el índice interno de la base de datos.
+        while (User::where('idSistema', $systemId)->where('usuario', $username)->exists()) {
+            $suffixText = (string) $suffix++;
+            $username = Str::limit($usernameBase, 50 - strlen($suffixText), '').$suffixText;
+        }
 
         $parts = preg_split('/\s+/', trim($data['name']));
         $nombres = array_shift($parts) ?: $data['name'];
@@ -166,9 +191,21 @@ class RoleController extends Controller
         $systemId = User::sistemaId();
         $roleId = $role->idRol;
         $roleName = $role->nombreRol;
+        // derivacionescasilla guarda historial real de derivaciones de documentos,
+        // no un simple permiso: si el rol lo usó, no se puede borrar sin perder ese historial.
+        abort_if(
+            DB::table('derivacionescasilla')->where('rolEmisor', $roleId)->orWhere('rolReceptor', $roleId)->exists(),
+            422,
+            'Este rol no se puede eliminar: tiene derivaciones de documentos registradas en su historial.'
+        );
+
         $affectedUsers = User::where('idSistema', $systemId)->where('idRol', $roleId)
             ->with(['persona', 'trabajadorRecord'])->get();
         User::where('idSistema', $systemId)->where('idRol', $roleId)->update(['idRol' => null]);
+        // accesos tiene ON DELETE CASCADE, pero accesosacciones y tiposreporteroles no:
+        // hay que limpiarlas a mano o el borrado del rol falla por restricción de llave foránea.
+        DB::table('accesosacciones')->where('idRol', $roleId)->delete();
+        DB::table('tiposreporteroles')->where('idRol', $roleId)->delete();
         $role->delete();
         AuditLogger::log($request, 'role.deleted', 'Rol', $roleId, ['name' => $roleName]);
 

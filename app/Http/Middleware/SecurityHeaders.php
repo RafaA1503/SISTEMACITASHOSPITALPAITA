@@ -17,6 +17,16 @@ class SecurityHeaders
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
 
+        // El login y las pantallas con datos de pacientes/usuarios nunca deben
+        // restaurarse desde la caché al usar Atrás o Adelante. Después de cerrar
+        // sesión el navegador debe consultar de nuevo al servidor y respetar el
+        // middleware auth, en vez de enseñar una copia antigua del dashboard.
+        if ($request->routeIs('login', 'login.store') || $request->user()) {
+            $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+            $response->headers->set('Pragma', 'no-cache');
+            $response->headers->set('Expires', '0');
+        }
+
         $scriptSrc = "'self'";
         $connectSrc = "'self'";
         if (app()->environment('local')) {

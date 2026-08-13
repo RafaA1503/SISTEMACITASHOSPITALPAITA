@@ -229,7 +229,12 @@ const showLoader = (message = 'Cargando sistema...') => {
     loaderSafetyTimer = window.setTimeout(hideLoader, 12_000);
 };
 window.addEventListener('load', hideLoader);
-window.addEventListener('pageshow', hideLoader);
+window.addEventListener('pageshow', event => {
+    hideLoader();
+    // Algunos navegadores restauran visualmente una página privada desde su
+    // back-forward cache. Recargar obliga a Laravel a validar la sesión actual.
+    if (event.persisted) window.location.reload();
+});
 setTimeout(hideLoader, 900);
 document.addEventListener('click', event => {
     const link = event.target.closest('a[href]');
@@ -261,11 +266,13 @@ const applyTheme = theme => {
     }
 };
 applyTheme(savedTheme || preferredTheme);
-const themeToggle = document.createElement('button');
-themeToggle.type = 'button';
-themeToggle.id = 'themeToggle';
-themeToggle.className = 'theme-toggle';
-document.body.appendChild(themeToggle);
+const themeToggle = document.getElementById('themeToggle') || document.createElement('button');
+if (!themeToggle.isConnected) {
+    themeToggle.type = 'button';
+    themeToggle.id = 'themeToggle';
+    themeToggle.className = 'theme-toggle';
+    document.body.appendChild(themeToggle);
+}
 applyTheme(document.documentElement.dataset.theme);
 themeToggle.addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
@@ -439,6 +446,7 @@ if (porterPanel) {
     const visitToggle = document.createElement('button');
     visitToggle.type = 'button';
     visitToggle.className = 'visit-minimize';
+    visitToggle.dataset.visitDetailsToggle = '';
     visitToggle.setAttribute('aria-expanded', 'true');
     visitToggle.setAttribute('aria-label', 'Ocultar detalles de visitas hospitalarias');
     visitToggle.textContent = 'Ocultar detalles';
@@ -447,12 +455,18 @@ if (porterPanel) {
     visitContent.className = 'visit-demo-content';
     while (visitTitle.nextElementSibling) visitContent.appendChild(visitTitle.nextElementSibling);
     visitDemo.appendChild(visitContent);
-    visitToggle.addEventListener('click', () => {
-        const minimized = !visitContent.hidden;
+    const toggleVisitDetails = () => {
+        const minimized = !visitDemo.classList.contains('is-collapsed');
+        visitDemo.classList.toggle('is-collapsed', minimized);
         visitContent.hidden = minimized;
         visitToggle.textContent = minimized ? 'Mostrar detalles' : 'Ocultar detalles';
         visitToggle.setAttribute('aria-expanded', String(!minimized));
         visitToggle.setAttribute('aria-label', minimized ? 'Mostrar detalles de visitas hospitalarias' : 'Ocultar detalles de visitas hospitalarias');
+    };
+    visitToggle.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleVisitDetails();
     });
     porterPanel.insertAdjacentElement('afterend', visitDemo);
     const visitForm = visitDemo.querySelector('#visitDemoForm');
@@ -532,6 +546,9 @@ if (porterPanel) {
     });
     const lookupVisitorDni = async () => {
         const dni = visitDniInput.value.replace(/[^0-9]/g, '');
+        // En ingreso manual, completar el DNI nunca debe consultar ni modificar
+        // el nombre que el usuario ya escribio.
+        if (manualVisitorEntry) return;
         if (!validVisitorDni(dni) || dni === resolvedVisitorDni) return;
         visitorDniStatus.className = 'is-loading';
         visitorDniStatus.textContent = 'Consultando identidad en RENIEC...';
@@ -546,7 +563,9 @@ if (porterPanel) {
             visitorDniStatus.className = 'is-success';
             visitorDniStatus.textContent = 'Identidad verificada. Solo selecciona el parentesco.';
         } catch (error) {
-            visitorNameInput.value = '';
+            // Solo limpiamos un valor administrado por la consulta automatica.
+            // Un nombre escrito manualmente siempre se conserva.
+            if (!manualVisitorEntry) visitorNameInput.value = '';
             resolvedVisitorDni = '';
             visitorDniStatus.className = 'is-error';
             visitorDniStatus.textContent = error.message || 'No se pudo consultar el DNI.';
@@ -563,9 +582,11 @@ if (porterPanel) {
         visitDniInput.setCustomValidity(incomplete || valid ? '' : 'Ingresa un DNI valido de 8 digitos.');
         visitDniInput.classList.toggle('is-invalid', !incomplete && !valid);
         if (dni !== resolvedVisitorDni) resetVisitorIdentity();
-        if (valid) visitorLookupTimer = setTimeout(lookupVisitorDni, 300);
+        if (valid && !manualVisitorEntry) visitorLookupTimer = setTimeout(lookupVisitorDni, 300);
     });
-    visitDniInput.addEventListener('blur', lookupVisitorDni);
+    visitDniInput.addEventListener('blur', () => {
+        if (!manualVisitorEntry) lookupVisitorDni();
+    });
     visitDemo.querySelector('[data-visit-scan]')?.addEventListener('click', async () => {
         if (!('BarcodeDetector' in window)) {
             showModuleToast('Escáner no compatible', 'Usa un lector USB/Bluetooth o escribe los 8 dígitos del DNI.');
@@ -577,9 +598,12 @@ if (porterPanel) {
         overlay.className = 'scanner-overlay';
         overlay.innerHTML = '<section><button type="button" aria-label="Cerrar">×</button><h2>Escanear DNI del visitante</h2><p>Apunta la cámara al código de barras del documento.</p><div class="camera-frame"><video autoplay playsinline></video><i></i></div><small>La identidad se consultará automáticamente al detectar 8 dígitos.</small></section>';
         document.body.appendChild(overlay);
+        document.documentElement.classList.add('scanner-open');
+        document.body.classList.add('scanner-open');
         const video = overlay.querySelector('video');
-        const close = () => { active = false; stream?.getTracks().forEach(track => track.stop()); overlay.remove(); };
+        const close = () => { active = false; stream?.getTracks().forEach(track => track.stop()); overlay.remove(); document.documentElement.classList.remove('scanner-open'); document.body.classList.remove('scanner-open'); };
         overlay.querySelector('button').addEventListener('click', close);
+        overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
         try {
             stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
             video.srcObject = stream;
@@ -819,7 +843,13 @@ const refreshPortalDataInPlace = async (message = 'La información se actualizó
         liveRefreshPending = false;
     }
 };
-document.querySelectorAll('.moduleAction').forEach(btn => btn.addEventListener('click', () => btn.dataset.url ? window.location.href = btn.dataset.url : showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.')));
+// Los enlaces de acceso rápido ya tienen un href real. Este comportamiento es
+// únicamente para botones de demostración; aplicarlo también a los enlaces
+// provocaba dos acciones durante el mismo clic y hacía Reportes intermitente.
+document.querySelectorAll('button.moduleAction').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.dataset.url) window.location.assign(btn.dataset.url);
+    else showModuleToast('Función disponible', 'El módulo está listo para conectar con la base de datos.');
+}));
 
 const attendanceModal = document.getElementById('attendanceModal');
 if (attendanceModal) {
@@ -851,7 +881,20 @@ if (attendanceModal) {
         document.body.classList.add('attendance-modal-open');
         attendanceModal.hidden = false;
     });
-    attendanceYes.addEventListener('click', () => { pendingAttendanceForm?.requestSubmit(); closeAttendanceModal(); });
+    attendanceYes.addEventListener('click', () => {
+        // La fila puede haber sido reemplazada por una actualización en vivo. En
+        // ese caso el formulario nuevo todavía no tenía enlazado el envío AJAX y
+        // el botón de tardanza parecía no responder o recargaba toda la página.
+        const form = pendingAttendanceForm;
+        if (!form) {
+            showModuleToast('No se pudo registrar', 'Actualiza la lista e intenta nuevamente.');
+            closeAttendanceModal();
+            return;
+        }
+        bindAjaxForm(form);
+        form.requestSubmit();
+        closeAttendanceModal();
+    });
     document.getElementById('attendanceModalNo')?.addEventListener('click', closeAttendanceModal);
     document.getElementById('attendanceModalClose')?.addEventListener('click', closeAttendanceModal);
     attendanceModal.addEventListener('click', event => { if (event.target === attendanceModal) closeAttendanceModal(); });
@@ -1110,21 +1153,39 @@ if (roleSidebarEl) {
     window.addEventListener('resize', () => window.innerWidth <= 760 ? document.body.classList.remove('sidebar-collapsed') : setCollapsed(localStorage.getItem('hospital-sidebar') === 'collapsed'));
 }
 const userDropdown = document.getElementById('userDropdown');
+const closeUserDropdown = () => {
+    if (!userDropdown) return;
+    userDropdown.hidden = true;
+    userMenuButton?.setAttribute('aria-expanded', 'false');
+};
+// Da prioridad absoluta al enlace Reportes frente a los manejadores globales
+// que cierran el menú, animan la página o atienden gestos táctiles.
+document.querySelectorAll('[data-direct-navigation]').forEach(link => {
+    link.addEventListener('click', event => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const destination = link.href;
+        closeUserDropdown();
+        showLoader('Abriendo reportes...');
+        window.location.assign(destination);
+    }, { capture: true });
+});
 userMenuButton?.addEventListener('click', event => {
     event.stopPropagation();
-    userDropdown.hidden = !userDropdown.hidden;
-    userMenuButton.setAttribute('aria-expanded', String(!userDropdown.hidden));
+    const isOpening = userDropdown.hidden;
+    document.querySelector('.notifications-popover')?.setAttribute('hidden', '');
+    userDropdown.hidden = !isOpening;
+    userMenuButton.setAttribute('aria-expanded', String(isOpening));
 });
 document.addEventListener('click', event => {
     if (userDropdown && !userDropdown.hidden && !event.target.closest('.user-menu')) {
-        userDropdown.hidden = true;
-        userMenuButton?.setAttribute('aria-expanded', 'false');
+        closeUserDropdown();
     }
 });
 enableSwipeToDismiss(userDropdown, () => {
     if (!userDropdown || userDropdown.hidden) return;
-    userDropdown.hidden = true;
-    userMenuButton?.setAttribute('aria-expanded', 'false');
+    closeUserDropdown();
 });
 const patientsDateFilter = document.getElementById('patientsDateFilter');
 if (patientsDateFilter) {
@@ -1165,6 +1226,31 @@ if (patientsSearch) {
     patientsServiceFilter.addEventListener('change', applyPatientFilters);
     patientsStatusFilter.addEventListener('change', applyPatientFilters);
 }
+const patientsSortHeaders = document.querySelectorAll('#upcomingPatients th[data-sort-key]');
+if (patientsSortHeaders.length) {
+    const sortAttr = { scheduled: 'scheduledAt', patient: 'patientName', service: 'serviceName', status: 'status', entry: 'entryAt', exit: 'exitAt' };
+    patientsSortHeaders.forEach(th => {
+        th.addEventListener('click', () => {
+            const tableBody = document.getElementById('patientsTableBody');
+            if (!tableBody) return;
+            const dir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+            patientsSortHeaders.forEach(other => delete other.dataset.sortDir);
+            th.dataset.sortDir = dir;
+            const attr = sortAttr[th.dataset.sortKey];
+            const rows = [...tableBody.querySelectorAll('tr[data-row-id]')];
+            rows.sort((a, b) => {
+                const va = a.dataset[attr] || '';
+                const vb = b.dataset[attr] || '';
+                if (va === '' && vb === '') return 0;
+                if (va === '') return 1;
+                if (vb === '') return -1;
+                const cmp = va.localeCompare(vb, 'es', { numeric: true });
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(row => tableBody.appendChild(row));
+        });
+    });
+}
 if (document.getElementById('patientsTableBody')) {
     let appointmentsVersion = null;
     const appointmentsVersionUrl = new URL('/api/portero/citas-version', window.location.origin);
@@ -1194,7 +1280,10 @@ if (notifBell) {
     notificationsPanel.hidden = true;
     notificationsPanel.innerHTML = '<div class="notifications-head"><strong>Notificaciones</strong><button type="button" aria-label="Cerrar notificaciones">×</button></div><div class="notifications-body"><p>Cargando notificaciones...</p></div>';
     notifBell.parentElement.appendChild(notificationsPanel);
-    const closeNotifications = () => { notificationsPanel.hidden = true; };
+    const closeNotifications = () => {
+        notificationsPanel.hidden = true;
+        notifBell.setAttribute('aria-expanded', 'false');
+    };
     const renderNotifications = notifications => {
         const body = notificationsPanel.querySelector('.notifications-body');
         body.innerHTML = notifications.length
@@ -1215,7 +1304,9 @@ if (notifBell) {
     };
     notifBell.addEventListener('click', () => {
         const isOpening = notificationsPanel.hidden;
+        if (isOpening) closeUserDropdown();
         notificationsPanel.hidden = !isOpening;
+        notifBell.setAttribute('aria-expanded', String(isOpening));
         if (!isOpening) return;
         if (cachedNotifications) renderNotifications(cachedNotifications); // instantáneo con lo último en caché
         refreshNotificationsCache(); // y se refresca en silencio por si cambió algo
@@ -1223,6 +1314,11 @@ if (notifBell) {
     refreshNotificationsCache();
     notificationsPanel.querySelector('button').addEventListener('click', closeNotifications);
     document.addEventListener('click', event => { if (!event.target.closest('.notif-bell, .notifications-popover')) closeNotifications(); });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        closeNotifications();
+        closeUserDropdown();
+    });
     let lastKnownCount = parseInt(notifBadge?.textContent || '0', 10);
     const pollPending = async () => {
         try {
@@ -1253,7 +1349,7 @@ document.getElementById('portalSearch')?.addEventListener('click',async()=>{
     result.innerHTML='<div class="skeleton-card"><span class="skeleton-avatar"></span><div><span class="skeleton-line" style="width:55%"></span><span class="skeleton-line" style="width:35%"></span></div></div>';
     try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
         const initials=escapeHtml(data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join(''));
-        const cards=data.appointments.map(a=>`<article><div class="appointment-date"><strong>${escapeHtml(a.time)}</strong><small>${escapeHtml(a.date)}</small></div><div><span>${escapeHtml(a.service)}</span><h3>${escapeHtml(a.type)}</h3><p>${escapeHtml(a.location||'Ubicación por confirmar')}</p>${a.preparation?`<small class="prep">Preparación: ${escapeHtml(a.preparation)}</small>`:''}</div><b>${escapeHtml(a.status)}</b></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>';
+        const cards=data.appointments.map(a=>`<article class="appointment-card"><div class="appointment-card-head"><div class="appointment-date"><strong>${escapeHtml(a.time)}</strong><small>${escapeHtml(a.date)}</small></div><b class="appointment-status">${escapeHtml(a.status)}</b></div><div class="appointment-info"><span class="appointment-service">${escapeHtml(a.service)}</span><h3>${escapeHtml(a.type)}</h3><p>${escapeHtml(a.location||'Ubicación por confirmar')}</p>${a.preparation?`<small class="prep">Preparación: ${escapeHtml(a.preparation)}</small>`:''}</div></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>';
         result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${initials}</div><div><strong>${escapeHtml(data.patient.name)}</strong><p>DNI ${escapeHtml(data.patient.dni)} · Seguro ${escapeHtml(data.patient.insurance||'No registrado')}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${cards}</div>`;
     }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
 });
@@ -1273,6 +1369,10 @@ document.addEventListener('appointments:changed', () => {
 const scanModalElement = document.getElementById('scanModal');
 if (scanModalElement) {
     const scanModal = document.getElementById('scanModal');
+    // Keep the scanner outside animated/transformed portal containers. A fixed
+    // element inside one of those containers is positioned against the page
+    // content, which made the camera appear below the visible viewport.
+    if (scanModal.parentElement !== document.body) document.body.appendChild(scanModal);
     const scanVideo = document.getElementById('scanVideo');
     const scanHint = document.getElementById('scanHint');
     let scanStream = null;
@@ -1350,6 +1450,13 @@ if (scanModalElement) {
         if (event.target.closest('#scanModalClose')) {
             event.preventDefault();
             event.stopPropagation();
+            stopScan();
+            return;
+        }
+        // En móviles el gesto puede no terminar como click. Cerrar desde
+        // pointerdown garantiza que tocar el fondo oscuro siempre funcione.
+        if (event.target === scanModal) {
+            event.preventDefault();
             stopScan();
         }
     }, true);
@@ -1547,6 +1654,22 @@ document.addEventListener('change', event => {
 });
 
 // --- Turnos de profesionales: el formulario de arriba sirve tanto para crear como editar ---
+const refreshCaptchaButton = document.getElementById('refreshCaptcha');
+refreshCaptchaButton?.addEventListener('click', async () => {
+    refreshCaptchaButton.disabled = true;
+    try {
+        const response = await fetch(refreshCaptchaButton.dataset.url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+        if (!response.ok) throw new Error('captcha');
+        const payload = await response.json();
+        document.getElementById('captchaCode').textContent = payload.code;
+        document.querySelector('input[name="captcha"]')?.focus();
+    } catch {
+        alert('No se pudo generar otro código. Inténtalo nuevamente.');
+    } finally {
+        refreshCaptchaButton.disabled = false;
+    }
+});
+
 const scheduleForm = document.getElementById('scheduleForm');
 if (scheduleForm) {
     const methodField = document.getElementById('scheduleFormMethod');
@@ -1626,4 +1749,31 @@ if (document.querySelector('form[action$="/logout"]')) {
 // del ícono en Android. No cachea nada (ver public/sw.js).
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
+// --- Aviso de nueva versión: detecta cambios en el código del servidor sin
+// que nadie tenga que "subir la versión" a mano (ver App\Support\AppVersion) ---
+const appVersionMeta = document.querySelector('meta[name="app-version"]');
+if (appVersionMeta) {
+    const currentAppVersion = appVersionMeta.content;
+    const updateBanner = document.createElement('div');
+    updateBanner.className = 'update-banner';
+    updateBanner.innerHTML = '<span class="update-dot"></span><div><strong>Hay una actualización disponible</strong><small>Recarga la página para ver los últimos cambios.</small></div><button type="button" class="update-reload">Recargar</button><button type="button" class="update-dismiss" aria-label="Cerrar">×</button>';
+    document.body.appendChild(updateBanner);
+    let updateDismissed = false;
+    updateBanner.querySelector('.update-reload').addEventListener('click', () => window.location.reload());
+    updateBanner.querySelector('.update-dismiss').addEventListener('click', () => {
+        updateDismissed = true;
+        updateBanner.classList.remove('visible');
+    });
+    const checkAppVersion = async () => {
+        if (updateDismissed || updateBanner.classList.contains('visible')) return;
+        try {
+            const response = await fetch('/api/version', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+            if (!response.ok) return;
+            const { version } = await response.json();
+            if (version && version !== currentAppVersion) updateBanner.classList.add('visible');
+        } catch { /* se reintenta en el siguiente ciclo */ }
+    };
+    setInterval(checkAppVersion, 30000);
 }

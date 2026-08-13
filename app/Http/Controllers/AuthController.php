@@ -22,53 +22,62 @@ class AuthController extends Controller
 {
     public function loginView(Request $request)
     {
-        if (! $request->session()->has('login_captcha_answer')) $this->refreshLoginCaptcha($request);
-
-        return view('auth.login', ['captchaQuestion' => $request->session()->get('login_captcha_question')]);
+        if (! $request->session()->has('login_captcha_hash')) $this->generateCaptcha($request);
+        return view('auth.login', ['captchaCode' => $request->session()->get('login_captcha_code')]);
     }
 
     public function login(Request $request)
     {
-        $data = $request->validate(['email' => 'required|email', 'password' => 'required', 'captcha' => 'required|digits_between:1,3']);
-        $captchaAnswer = (string) $request->session()->get('login_captcha_answer', '');
-        if ($captchaAnswer === '' || ! hash_equals($captchaAnswer, trim((string) $data['captcha']))) {
-            $this->refreshLoginCaptcha($request);
-            return back()->withErrors(['captcha' => 'El resultado del CAPTCHA no es correcto.'])->onlyInput('email');
+        $data = $request->validate([
+            'login' => 'required|string|max:150',
+            'password' => 'required',
+            'captcha' => 'required|string|size:6',
+        ], ['captcha.required' => 'Escribe el código de seguridad.', 'captcha.size' => 'El código de seguridad debe tener 6 caracteres.']);
+        $captchaHash = (string) $request->session()->pull('login_captcha_hash', '');
+        $request->session()->forget('login_captcha_code');
+        if ($captchaHash === '' || ! hash_equals($captchaHash, hash('sha256', strtoupper(trim($data['captcha']))))) {
+            $this->generateCaptcha($request);
+            return back()->withErrors(['captcha' => 'El código de seguridad no es correcto.'])->onlyInput('login');
         }
-        $correo = strtolower(trim($data['email']));
+        $login = mb_strtolower(trim($data['login']));
 
-        $throttleKey = $correo.'|'.$request->ip();
+        $throttleKey = $login.'|'.$request->ip();
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             $seconds = RateLimiter::availableIn($throttleKey);
-            return back()->withErrors(['email' => "Demasiados intentos. Intenta nuevamente en {$seconds} segundos."])->onlyInput('email');
+            return back()->withErrors(['login' => "Demasiados intentos. Intenta nuevamente en {$seconds} segundos."])->onlyInput('login');
         }
 
-        // Escopeado a nuestro sistema: la misma persona puede tener cuentas en
-        // otros sistemas de SIGESA con el mismo correo.
-        $credentials = ['correo' => $correo, 'password' => $data['password'], 'idSistema' => User::sistemaId()];
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        // Permite correo o usuario, siempre limitado al sistema actual.
+        $user = User::where('idSistema', User::sistemaId())
+            ->where(function ($query) use ($login) {
+                $query->whereRaw('LOWER(correo) = ?', [$login])
+                    ->orWhereRaw('LOWER(usuario) = ?', [$login]);
+            })->first();
+        if (! $user || ! Hash::check($data['password'], $user->getAuthPassword())) {
             RateLimiter::hit($throttleKey, 60);
-            return back()->withErrors(['email' => 'Correo o contraseña incorrectos.'])->onlyInput('email');
+            return back()->withErrors(['login' => 'Correo, usuario o contraseña incorrectos.'])->onlyInput('login');
         }
+        Auth::login($user, $request->boolean('remember'));
         RateLimiter::clear($throttleKey);
         if (! $request->user()->active) {
             Auth::logout();
-            return back()->withErrors(['email' => 'La cuenta está desactivada.']);
+            return back()->withErrors(['login' => 'La cuenta está desactivada.']);
         }
         $request->session()->regenerate();
-        $request->session()->forget(['login_captcha_question', 'login_captcha_answer']);
-
         return redirect()->route('portal', $request->user()->defaultModule());
     }
 
-    private function refreshLoginCaptcha(Request $request): void
+    public function refreshCaptcha(Request $request)
     {
-        $left = random_int(2, 9);
-        $right = random_int(1, 9);
-        $request->session()->put([
-            'login_captcha_question' => "{$left} + {$right}",
-            'login_captcha_answer' => (string) ($left + $right),
-        ]);
+        $this->generateCaptcha($request);
+        return response()->json(['code' => $request->session()->get('login_captcha_code')]);
+    }
+
+    private function generateCaptcha(Request $request): void
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $code = collect(range(1, 6))->map(fn () => $alphabet[random_int(0, strlen($alphabet) - 1)])->implode('');
+        $request->session()->put(['login_captcha_code' => $code, 'login_captcha_hash' => hash('sha256', $code)]);
     }
 
     public function logout(Request $request) { Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken(); return redirect()->route('login'); }
