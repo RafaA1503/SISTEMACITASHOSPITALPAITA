@@ -62,7 +62,8 @@ class HospitalPortalController extends Controller
         $metrics=['citas_hoy'=>Appointment::whereDate('scheduled_at',today())->count(),'confirmadas'=>Appointment::whereDate('scheduled_at',today())->where('status','confirmada')->count(),'ingresos'=>DB::table('access_logs')->whereDate('registered_at',today())->where('movement','ingreso')->count(),'pendientes'=>Appointment::whereDate('scheduled_at',today())->where('status','programada')->count()];
         $upcoming=$role==='portero'?Appointment::with(['patient','type.service'])->whereDate('scheduled_at',today())->where('status','programada')->whereBetween('scheduled_at',[now(),now()->addMinutes(60)])->orderBy('scheduled_at')->get():collect();
         $location=$this->resolveLocation($request);
-        return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo','location'));
+        $hospitalVisits=$role==='portero'?$this->hospitalVisitRows():collect();
+        return view('portal',compact('role','today','metrics','services','user','upcoming','dateFrom','dateTo','location','hospitalVisits'));
     }
 
     /** Ciudad/país por IP del cliente, para mostrar junto a la fecha y hora. En red local (IP privada,
@@ -361,7 +362,7 @@ class HospitalPortalController extends Controller
             ->orderByDesc('attention.FechaIngreso')
             ->select([
                 'attention.IdAtencion', 'attention.IdCamaIngreso',
-                'service.Nombre as service_name',
+                'service.Nombre as service_name', 'patient.NroDocumento as dni',
                 DB::raw("TRIM(CONCAT_WS(' ', patient.PrimerNombre, patient.SegundoNombre, patient.TercerNombre, patient.ApellidoPaterno, patient.ApellidoMaterno)) as patient_name"),
             ])
             ->get()
@@ -372,6 +373,7 @@ class HospitalPortalController extends Controller
                 return [
                     'key' => 'hospitalized-'.$patient->IdAtencion,
                     'name' => trim((string) $patient->patient_name),
+                    'dni' => trim((string) $patient->dni),
                     'detail' => 'Hospitalización · '.$bed.$service,
                 ];
             })

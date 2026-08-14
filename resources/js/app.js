@@ -25,8 +25,8 @@ function enableSwipeToDismiss(sheet, dismiss) {
     }, { passive: true });
 }
 
-function enhanceSelect(select) {
-    if (select.dataset.comboEnhanced || select.multiple || select.options.length < 8) return;
+function enhanceSelect(select, { force = false } = {}) {
+    if (select.dataset.comboEnhanced || select.multiple || (!force && select.options.length < 8)) return;
     select.dataset.comboEnhanced = '1';
 
     const wrapper = document.createElement('div');
@@ -430,50 +430,22 @@ if (porterPanel) {
     visitDemo.innerHTML = `
         <div class="panel-title"><div><h2>Visitas hospitalarias</h2><p>Demostracion: registra al familiar que visita a un paciente hospitalizado.</p></div></div>
         <div class="visit-demo-body">
-            <div class="visit-patient"><span>PA</span><div><strong>Paciente hospitalizado de ejemplo</strong><small>Hospitalizacion · Cama 12 · Medicina</small></div><b>Atencion activa</b></div>
-            <label class="visit-patient-select">Paciente hospitalizado<select id="visitPatientSelect"><option value="maria">Maria Flores Gomez · Cama 12 · Medicina</option><option value="carlos">Carlos Ruiz Chunga · Cama 08 · Cirugia</option><option value="ana">Ana Torres Vilela · Cama 04 · Pediatria</option></select></label>
-            <form id="visitDemoForm" class="visit-demo-form" novalidate>
+            <div class="visit-patient-lookup"><label>DNI del paciente hospitalizado<div><input id="visitPatientDni" maxlength="8" inputmode="numeric" autocomplete="off" placeholder="Ingresa los 8 dígitos"><button type="button" id="visitPatientScan" class="scan-btn" aria-label="Escanear código de barras del paciente"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V6a2 2 0 0 1 2-2h2M3 15v3a2 2 0 0 0 2 2h2M21 9V6a2 2 0 0 0-2-2h-2M21 15v3a2 2 0 0 1-2 2h-2"/><rect x="7" y="8" width="10" height="8" rx="1"/></svg></button></div></label><small id="visitPatientStatus">Escribe el DNI del paciente hospitalizado.</small></div>
+            <div class="visit-patient" hidden><span>PA</span><div><strong></strong><small></small></div><b>Atencion activa</b></div>
+            <form id="visitDemoForm" class="visit-demo-form" hidden novalidate>
                 <label class="visit-name-field">Nombre del visitante<input name="name" required readonly aria-readonly="true" placeholder="Se completa al consultar el DNI"></label>
                 <label class="visit-dni-field">DNI<div class="visit-dni-input"><input name="dni" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="off" placeholder="8 digitos"><button type="button" data-visit-scan aria-label="Escanear código de barras del DNI"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 9h8v6H8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div><small data-visit-dni-status>Escribe o escanea los 8 dígitos.</small></label>
-                <label class="visit-entry-time">Hora de entrada<input name="entry_time" type="time" required lang="en-US"></label>
                 <label>Parentesco<select name="relationship" required><option value="">Seleccionar</option><option>Madre / padre</option><option>Hijo(a)</option><option>Hermano(a)</option><option>Conyuge</option><option>Otro familiar</option></select></label>
                 <button class="primary-btn" type="submit">Registrar entrada</button>
             </form>
         </div>
-        <div class="visit-demo-list"><div class="visit-demo-list-head"><strong>Visitas registradas ahora</strong><small>La salida se registra desde esta misma lista.</small></div><p class="portal-empty" id="visitDemoEmpty">Aun no hay visitantes registrados en esta demostracion.</p><div id="visitDemoRows"></div></div>
+        <div class="visit-demo-list" hidden><div class="visit-demo-list-head"><strong>Visitas registradas ahora</strong><small>La salida se registra desde esta misma lista.</small></div><p class="portal-empty" id="visitDemoEmpty">Aun no hay visitantes registrados en esta demostracion.</p><div id="visitDemoRows"></div></div>
     `;
-    const visitTitle = visitDemo.querySelector('.panel-title');
-    const visitToggle = document.createElement('button');
-    visitToggle.type = 'button';
-    visitToggle.className = 'visit-minimize';
-    visitToggle.dataset.visitDetailsToggle = '';
-    visitToggle.setAttribute('aria-expanded', 'true');
-    visitToggle.setAttribute('aria-label', 'Ocultar detalles de visitas hospitalarias');
-    visitToggle.textContent = 'Ocultar detalles';
-    visitTitle.appendChild(visitToggle);
-    const visitContent = document.createElement('div');
-    visitContent.className = 'visit-demo-content';
-    while (visitTitle.nextElementSibling) visitContent.appendChild(visitTitle.nextElementSibling);
-    visitDemo.appendChild(visitContent);
-    const toggleVisitDetails = () => {
-        const minimized = !visitDemo.classList.contains('is-collapsed');
-        visitDemo.classList.toggle('is-collapsed', minimized);
-        visitContent.hidden = minimized;
-        visitToggle.textContent = minimized ? 'Mostrar detalles' : 'Ocultar detalles';
-        visitToggle.setAttribute('aria-expanded', String(!minimized));
-        visitToggle.setAttribute('aria-label', minimized ? 'Mostrar detalles de visitas hospitalarias' : 'Ocultar detalles de visitas hospitalarias');
-    };
-    visitToggle.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleVisitDetails();
-    });
+    visitDemo.dataset.porterPanel = 'hospitalizacion';
+    visitDemo.hidden = true;
     porterPanel.insertAdjacentElement('afterend', visitDemo);
     const visitForm = visitDemo.querySelector('#visitDemoForm');
     const visitDniInput = visitForm.elements.dni;
-    const visitEntryTimeInput = visitForm.elements.entry_time;
-    const currentTimeValue = () => new Date().toTimeString().slice(0, 5);
-    visitEntryTimeInput.value = currentTimeValue();
     const visitRows = visitDemo.querySelector('#visitDemoRows');
     const visitEmpty = visitDemo.querySelector('#visitDemoEmpty');
     const visitList = visitDemo.querySelector('.visit-demo-list');
@@ -496,13 +468,11 @@ if (porterPanel) {
         visitListToggle.setAttribute('aria-label', visitListToggle.title);
         visitListToggle.setAttribute('aria-expanded', String(!minimized));
     });
-    const visitPatientSelect = visitDemo.querySelector('#visitPatientSelect');
+    const visitPatientDni = visitDemo.querySelector('#visitPatientDni');
+    const visitPatientStatus = visitDemo.querySelector('#visitPatientStatus');
     const visitPatientCard = visitDemo.querySelector('.visit-patient');
-    let hospitalPatients = {
-        maria: { initials: 'MF', name: 'Maria Flores Gomez', detail: 'Hospitalizacion · Cama 12 · Medicina' },
-        carlos: { initials: 'CR', name: 'Carlos Ruiz Chunga', detail: 'Hospitalizacion · Cama 08 · Cirugia' },
-        ana: { initials: 'AT', name: 'Ana Torres Vilela', detail: 'Hospitalizacion · Cama 04 · Pediatria' },
-    };
+    let hospitalPatients = {};
+    let selectedPatientKey = null;
     const validVisitorDni = value => {
         const dni = String(value || '').replace(/[^0-9]/g, '');
         return /^[0-9]{8}$/.test(dni) && !/^(\d)\1{7}$/.test(dni);
@@ -587,59 +557,60 @@ if (porterPanel) {
     visitDniInput.addEventListener('blur', () => {
         if (!manualVisitorEntry) lookupVisitorDni();
     });
-    visitDemo.querySelector('[data-visit-scan]')?.addEventListener('click', async () => {
-        if (!('BarcodeDetector' in window)) {
-            showModuleToast('Escáner no compatible', 'Usa un lector USB/Bluetooth o escribe los 8 dígitos del DNI.');
-            return;
-        }
-        let stream;
-        let active = true;
-        const overlay = document.createElement('div');
-        overlay.className = 'scanner-overlay';
-        overlay.innerHTML = '<section><button type="button" aria-label="Cerrar">×</button><h2>Escanear DNI del visitante</h2><p>Apunta la cámara al código de barras del documento.</p><div class="camera-frame"><video autoplay playsinline></video><i></i></div><small>La identidad se consultará automáticamente al detectar 8 dígitos.</small></section>';
-        document.body.appendChild(overlay);
-        document.documentElement.classList.add('scanner-open');
-        document.body.classList.add('scanner-open');
-        const video = overlay.querySelector('video');
-        const close = () => { active = false; stream?.getTracks().forEach(track => track.stop()); overlay.remove(); document.documentElement.classList.remove('scanner-open'); document.body.classList.remove('scanner-open'); };
-        overlay.querySelector('button').addEventListener('click', close);
-        overlay.addEventListener('pointerdown', event => { if (event.target === overlay) close(); });
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
-            video.srcObject = stream;
-            const detector = new BarcodeDetector({ formats: ['pdf417', 'code_128', 'code_39', 'qr_code'] });
-            const detect = async () => {
-                if (!active) return;
-                try {
-                    for (const code of await detector.detect(video)) {
-                        const dni = code.rawValue.match(/\b\d{8}\b/)?.[0];
-                        if (dni) { visitDniInput.value = dni; close(); visitDniInput.dispatchEvent(new Event('input', { bubbles: true })); return; }
-                    }
-                } catch { /* se sigue intentando mientras la cámara esté abierta */ }
-                requestAnimationFrame(detect);
-            };
-            detect();
-        } catch {
-            close();
-            showModuleToast('No se pudo abrir la cámara', 'Revisa el permiso de cámara o ingresa el DNI manualmente.');
-        }
+    // Usa el mismo escáner de código de barras que "Buscar paciente"
+    // (ver #scanModal más abajo) en lugar de una implementación aparte.
+    visitDemo.querySelector('[data-visit-scan]')?.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('scan-dni-request', { detail: { target: visitDniInput } }));
     });
+    const showVisitorSection = show => {
+        visitPatientCard.hidden = !show;
+        visitForm.hidden = !show;
+        visitList.hidden = !show;
+    };
     const updateVisitPatient = () => {
-        const patient = hospitalPatients[visitPatientSelect.value];
-        if (!patient) return;
+        const patient = hospitalPatients[selectedPatientKey];
+        if (!patient) { showVisitorSection(false); return; }
         visitPatientCard.querySelector('span').textContent = patient.initials;
         visitPatientCard.querySelector('strong').textContent = patient.name;
         visitPatientCard.querySelector('small').textContent = patient.detail;
+        showVisitorSection(true);
         loadHospitalVisits?.();
     };
-    visitPatientSelect.addEventListener('change', updateVisitPatient);
+    const lookupHospitalizedPatient = dni => {
+        if (!/^\d{8}$/.test(dni)) {
+            selectedPatientKey = null;
+            showVisitorSection(false);
+            visitPatientStatus.className = '';
+            visitPatientStatus.textContent = 'Escribe el DNI del paciente hospitalizado.';
+            return;
+        }
+        const match = Object.entries(hospitalPatients).find(([, patient]) => patient.dni === dni);
+        if (!match) {
+            selectedPatientKey = null;
+            showVisitorSection(false);
+            visitPatientStatus.className = 'is-error';
+            visitPatientStatus.textContent = 'Ese DNI no corresponde a un paciente hospitalizado activo.';
+            return;
+        }
+        selectedPatientKey = match[0];
+        visitPatientStatus.className = 'is-success';
+        visitPatientStatus.textContent = 'Paciente encontrado.';
+        updateVisitPatient();
+    };
+    visitPatientDni.addEventListener('input', event => {
+        event.target.value = event.target.value.replace(/\D/g, '').slice(0, 8);
+        lookupHospitalizedPatient(event.target.value);
+    });
+    visitDemo.querySelector('#visitPatientScan')?.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('scan-dni-request', { detail: { target: visitPatientDni } }));
+    });
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     // Evita que un refresco de la lista (ej. al cambiar de paciente) reemplace
     // una fila cuya salida ya está en camino por una fresca y reactivada,
     // lo que permitiría un segundo clic real disparando una petición duplicada.
     const checkoutInFlight = new Set();
     const filterHospitalVisits = () => {
-        const patient = hospitalPatients[visitPatientSelect.value];
+        const patient = hospitalPatients[selectedPatientKey];
         if (!patient) return;
         const visibleRows = [...visitRows.querySelectorAll('.visit-row')].filter(row => {
             const belongsToPatient = row.dataset.patientLabel?.includes(patient.name);
@@ -700,7 +671,7 @@ if (porterPanel) {
     };
     const loadHospitalVisits = async () => {
         try {
-            const patient = hospitalPatients[visitPatientSelect.value];
+            const patient = hospitalPatients[selectedPatientKey];
             if (!patient) return;
             const response = await fetch(`/api/visitas-hospitalarias?patient=${encodeURIComponent(patient.name)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
             const payload = await response.json();
@@ -712,31 +683,17 @@ if (porterPanel) {
         } catch { /* La pantalla se mantiene operativa si no hay conexión. */ }
     };
     const loadHospitalizedPatients = async () => {
-        visitPatientSelect.disabled = true;
         try {
             const response = await fetch('/api/pacientes-hospitalizados', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
             const payload = await response.json();
-            if (!response.ok || !Array.isArray(payload.patients) || !payload.patients.length) throw new Error('No hay pacientes hospitalizados activos.');
+            if (!response.ok || !Array.isArray(payload.patients)) throw new Error();
             hospitalPatients = Object.fromEntries(payload.patients.map(patient => [patient.key, {
                 ...patient,
                 initials: patient.name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(),
             }]));
-            visitPatientSelect.replaceChildren(...Object.entries(hospitalPatients).map(([key, patient]) => {
-                const option = document.createElement('option');
-                option.value = key;
-                option.textContent = `${patient.name} · ${patient.detail.replace('Hospitalización · ', '')}`;
-                return option;
-            }));
-            updateVisitPatient();
-        } catch (error) {
-            visitPatientSelect.replaceChildren();
-            const option = document.createElement('option');
-            option.textContent = 'No hay pacientes hospitalizados activos';
-            option.value = '';
-            visitPatientSelect.append(option);
-            showModuleToast('Hospitalización', error.message || 'No se pudo cargar el listado de pacientes hospitalizados.');
-        } finally {
-            visitPatientSelect.disabled = false;
+        } catch {
+            hospitalPatients = {};
+            showModuleToast('Hospitalización', 'No se pudo cargar el listado de pacientes hospitalizados.');
         }
     };
     loadHospitalizedPatients();
@@ -746,8 +703,8 @@ if (porterPanel) {
         const name = String(values.get('name') || '').trim();
         const dni = String(values.get('dni') || '').replace(/[^0-9]/g, '');
         const relationship = String(values.get('relationship') || '').trim();
-        const patient = hospitalPatients[visitPatientSelect.value];
-        if (!patient) { showModuleToast('Paciente requerido', 'Selecciona un paciente hospitalizado activo.'); return; }
+        const patient = hospitalPatients[selectedPatientKey];
+        if (!patient) { showModuleToast('Paciente requerido', 'Busca al paciente hospitalizado por DNI.'); return; }
         if (!validVisitorDni(dni)) { showModuleToast('DNI invalido', 'Ingresa un DNI valido de 8 digitos.'); return; }
         if (!name || (!manualVisitorEntry && resolvedVisitorDni !== dni)) { showModuleToast('Identidad pendiente', manualVisitorEntry ? 'Ingresa el nombre completo del visitante.' : 'Espera la consulta RENIEC antes de registrar la visita.'); return; }
         if (!/^[A-Za-zÁÉÍÓÚÑÜáéíóúñü\s'.-]+$/.test(name)) { showModuleToast('Nombre inválido', 'El nombre solo puede tener letras y espacios, sin números ni símbolos.'); return; }
@@ -778,32 +735,39 @@ if (porterPanel) {
         } finally {
             submitButton.disabled = false;
         }
-        return;
-        visitForm.elements.dni.value = dni;
-        const row = document.createElement('article');
-        row.className = 'visit-row';
-        row.innerHTML = `<div><strong>${escapeHtml(name)}</strong><small>DNI ${escapeHtml(dni)} · ${escapeHtml(relationship)}</small></div><time>Entrada ${new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}</time><button type="button">Registrar salida</button>`;
-        row.querySelector('button').addEventListener('click', event => {
-            const exitButton = event.currentTarget;
-            if (row.dataset.exited) return;
-            row.dataset.exited = '1';
-            row.classList.add('visit-exited');
-            row.querySelector('time').textContent = `Salida ${new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})}`;
-            exitButton.textContent = 'Salida registrada';
-            exitButton.disabled = true;
-            showModuleToast('Salida registrada', 'La salida del visitante fue registrada correctamente.');
-        });
-        row.dataset.patient = visitPatientSelect.value;
-        row.dataset.visitorDni = dni;
-        row.querySelector('small').textContent = `Visita a ${patient.name} · DNI ${dni} · ${relationship}`;
-        visitRows.prepend(row);
-        visitEmpty.hidden = true;
-        visitForm.reset();
-        resetVisitorIdentity();
-        visitDniInput.setCustomValidity('');
-        visitDniInput.classList.remove('is-invalid');
-        showModuleToast('Entrada registrada', 'El familiar aparece vinculado al paciente hospitalizado.');
     });
+}
+const porterTabs = document.querySelectorAll('.porter-tab');
+if (porterTabs.length) {
+    const porterPanels = document.querySelectorAll('[data-porter-panel]');
+    const porterModalBackdrop = document.getElementById('porterModalBackdrop');
+    const porterModalBody = document.getElementById('porterModalBody');
+    const porterModalClose = document.getElementById('porterModalClose');
+    const closePorterModal = () => {
+        porterModalBackdrop.hidden = true;
+        porterTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    };
+    porterTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.porterTab;
+            porterTabs.forEach(other => {
+                other.classList.toggle('active', other === tab);
+                other.setAttribute('aria-selected', String(other === tab));
+            });
+            porterPanels.forEach(panel => {
+                if (panel.dataset.porterPanel === target) {
+                    porterModalBody.appendChild(panel);
+                    panel.hidden = false;
+                } else {
+                    panel.hidden = true;
+                }
+            });
+            porterModalBackdrop.hidden = false;
+        });
+    });
+    porterModalClose.addEventListener('click', closePorterModal);
+    porterModalBackdrop.addEventListener('click', event => { if (event.target === porterModalBackdrop) closePorterModal(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !porterModalBackdrop.hidden) closePorterModal(); });
 }
 
 if (liveClock) {
@@ -1228,7 +1192,7 @@ if (patientsSearch) {
 }
 const patientsSortHeaders = document.querySelectorAll('#upcomingPatients th[data-sort-key]');
 if (patientsSortHeaders.length) {
-    const sortAttr = { scheduled: 'scheduledAt', patient: 'patientName', service: 'serviceName', status: 'status', entry: 'entryAt', exit: 'exitAt' };
+    const sortAttr = { scheduled: 'scheduledAt', patient: 'patientName', service: 'serviceName' };
     patientsSortHeaders.forEach(th => {
         th.addEventListener('click', () => {
             const tableBody = document.getElementById('patientsTableBody');
@@ -1340,31 +1304,44 @@ if (notifBell) {
     };
     setInterval(pollPending, 20000);
 }
-document.getElementById('portalSearch')?.addEventListener('click',async()=>{
-    const dni=document.getElementById('portalDni').value; const result=document.getElementById('portalPatientResult'); const button=document.getElementById('portalSearch');
-    if (button.disabled) return;
-    if(!/^\d{8}$/.test(dni)){result.hidden=false;result.innerHTML='<div class="portal-empty">Ingresa un DNI válido de 8 dígitos.</div>';return;}
-    button.disabled=true;button.textContent='Buscando...';
-    result.hidden=false;
-    result.innerHTML='<div class="skeleton-card"><span class="skeleton-avatar"></span><div><span class="skeleton-line" style="width:55%"></span><span class="skeleton-line" style="width:35%"></span></div></div>';
-    try{const response=await fetch(`/api/pacientes/${dni}/citas`,{headers:{Accept:'application/json'}});const data=await response.json();if(!response.ok)throw new Error(data.message);
-        const initials=escapeHtml(data.patient.name.split(/\s+/).slice(0,2).map(x=>x[0]).join(''));
-        const cards=data.appointments.map(a=>`<article class="appointment-card"><div class="appointment-card-head"><div class="appointment-date"><strong>${escapeHtml(a.time)}</strong><small>${escapeHtml(a.date)}</small></div><b class="appointment-status">${escapeHtml(a.status)}</b></div><div class="appointment-info"><span class="appointment-service">${escapeHtml(a.service)}</span><h3>${escapeHtml(a.type)}</h3><p>${escapeHtml(a.location||'Ubicación por confirmar')}</p>${a.preparation?`<small class="prep">Preparación: ${escapeHtml(a.preparation)}</small>`:''}</div></article>`).join('')||'<div class="portal-empty">El paciente no tiene citas vigentes.</div>';
-        result.hidden=false;result.innerHTML=`<div class="patient-summary"><div class="avatar">${initials}</div><div><strong>${escapeHtml(data.patient.name)}</strong><p>DNI ${escapeHtml(data.patient.dni)} · Seguro ${escapeHtml(data.patient.insurance||'No registrado')}</p></div><span>${data.appointments.length} cita(s) vigente(s)</span></div><div class="appointment-cards">${cards}</div>`;
-    }catch(error){result.hidden=false;result.innerHTML=`<div class="portal-empty">${error.message||'No fue posible realizar la búsqueda.'}</div>`;}finally{button.disabled=false;button.textContent='Buscar citas';}
+const filterCitedPatients = dni => {
+    const tbody = document.getElementById('patientsTableBody');
+    const empty = document.getElementById('patientsFilterEmpty');
+    const thead = document.getElementById('patientsTableHead');
+    if (!tbody) return;
+    const rows = [...tbody.querySelectorAll('tr[data-row-id]')];
+    const setEmpty = (icon, title, subtitle) => { if (empty) empty.innerHTML = `<span>${icon}</span><strong>${title}</strong><small>${subtitle}</small>`; };
+    if (!/^\d{8}$/.test(dni)) {
+        rows.forEach(row => { row.hidden = true; });
+        if (thead) thead.hidden = true;
+        if (empty) empty.hidden = false;
+        setEmpty('⌕', 'Busca un DNI para ver sus citas', 'Escribe o escanea el documento del paciente arriba.');
+        return;
+    }
+    let matches = 0;
+    rows.forEach(row => {
+        const match = row.dataset.patientDni === dni;
+        row.hidden = !match;
+        if (match) matches++;
+    });
+    if (thead) thead.hidden = matches === 0;
+    if (empty) empty.hidden = matches > 0;
+    setEmpty('✕', 'Sin citas para ese DNI', 'No se encontraron citas programadas para ese documento.');
+};
+document.getElementById('portalSearch')?.addEventListener('click', () => {
+    filterCitedPatients(document.getElementById('portalDni').value);
 });
 document.getElementById('portalDni')?.addEventListener('input', event => {
     event.target.value = event.target.value.replace(/\D/g,'').slice(0,8);
-    if (event.target.value.length === 8) document.getElementById('portalSearch')?.click();
+    filterCitedPatients(event.target.value);
 });
 document.getElementById('portalDni')?.addEventListener('keydown', event => {
-    if(event.key === 'Enter'){ event.preventDefault(); document.getElementById('portalSearch')?.click(); }
+    if(event.key === 'Enter'){ event.preventDefault(); filterCitedPatients(event.target.value); }
 });
 document.addEventListener('appointments:changed', () => {
-    const dni = document.getElementById('portalDni');
-    const result = document.getElementById('portalPatientResult');
-    if (dni?.value.length === 8 && result && !result.hidden) document.getElementById('portalSearch')?.click();
+    filterCitedPatients(document.getElementById('portalDni')?.value || '');
 });
+filterCitedPatients(document.getElementById('portalDni')?.value || '');
 
 const scanModalElement = document.getElementById('scanModal');
 if (scanModalElement) {
@@ -1378,6 +1355,7 @@ if (scanModalElement) {
     let scanStream = null;
     let scanRafId = null;
     let scanScrollY = 0;
+    let scanTargetInput = null;
 
     const lockScannerScroll = () => {
         scanScrollY = window.scrollY;
@@ -1413,7 +1391,7 @@ if (scanModalElement) {
             const codes = await detector.detect(scanVideo);
             const dni = codes.length ? extractDni(codes[0].rawValue) : null;
             if (dni) {
-                const input = document.getElementById('portalDni');
+                const input = scanTargetInput || document.getElementById('portalDni');
                 input.value = dni;
                 stopScan();
                 input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1423,7 +1401,8 @@ if (scanModalElement) {
         scanRafId = requestAnimationFrame(() => scanFrame(detector));
     };
 
-    const startScan = async () => {
+    const startScan = async target => {
+        scanTargetInput = target || document.getElementById('portalDni');
         lockScannerScroll();
         scanModal.hidden = false;
         if (!('BarcodeDetector' in window)) {
@@ -1443,8 +1422,9 @@ if (scanModalElement) {
     };
 
     document.addEventListener('click', event => {
-        if (event.target.closest('#portalScanBtn')) startScan();
+        if (event.target.closest('#portalScanBtn')) startScan(document.getElementById('portalDni'));
     });
+    document.addEventListener('scan-dni-request', event => startScan(event.detail?.target));
     // pointerdown en captura evita que el video o el zoom del navegador intercepte la X.
     document.addEventListener('pointerdown', event => {
         if (event.target.closest('#scanModalClose')) {
